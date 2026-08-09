@@ -979,7 +979,6 @@ function blocoManejo(a){
       <div class="checks">
         <label><input type="checkbox" id="mo_verm"> Vermífugo</label>
         <label><input type="checkbox" id="mo_carb"> Carbúnculo</label>
-        <label><input type="checkbox" id="mo_repro"> Vacina reprodutiva</label>
       </div>
       <div class="field" style="margin-top:12px"><label>Outros medicamentos / observações</label><input id="mo_out"></div>
       <div class="actions"><button class="btn" onclick="salvarManejo('${a.id}')">Registrar peso/manejo</button></div>
@@ -1002,7 +1001,7 @@ async function salvarManejo(animalId){
     data:v("mo_data").value||null,
     peso:v("mo_peso").value?parseFloat(v("mo_peso").value):null,
     vermifugo:v("mo_verm").checked, carbunculo:v("mo_carb").checked,
-    vacina_reprodutiva:v("mo_repro").checked,
+    vacina_reprodutiva:false,
     outros_medicamentos:v("mo_out").value.trim()||null,
   };
   const { error } = await sb.from("operacoes_rebanho").insert(rec);
@@ -1064,7 +1063,7 @@ function situacaoFemea(ciclos){
   const u=ciclos[0];
   let tag=`<span class="tag proc">sem registro</span>`;
   if(u){
-    if(u.fase==="prenhe") tag=`<span class="tag prenhe">prenhe (gestante)</span>`;
+    if(u.fase==="prenhe") tag=`<span class="tag prenhe">prenha (gestante)</span>`;
     else if(u.fase==="parida") tag=`<span class="tag proc">parida</span>`;
     else if(u.fase==="vazia") tag=`<span class="tag vazia">vazia</span>`;
     else if(u.fase==="aguardando") tag=`<span class="tag proc">aguardando diagnóstico</span>`;
@@ -1089,19 +1088,16 @@ async function flowNovaReproducao(a,prox,ultimo){
       <div class="field"><label id="rp_data_lbl">Data / período da monta</label><input id="rp_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
-    <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select>
-      <input id="rp_tnome" style="margin-top:6px" placeholder="ou nome/código do sêmen (central)"></div>
+    <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select></div>
     <div class="grid" style="margin-top:8px">
       <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()">
-        <option value="prenhe">Prenhe</option>
+        <option value="prenhe">Prenha</option>
         <option value="vazia">Vazia</option>
         <option value="aguardando">Aguardando diagnóstico</option></select></div>
       <div class="field" id="rp_ddiag_wrap"><label>Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="checks" style="margin-top:8px">
       <label><input type="checkbox" id="rp_repro"> Vacina reprodutiva</label>
-      <label><input type="checkbox" id="rp_verm"> Vermífugo</label>
-      <label><input type="checkbox" id="rp_carb"> Carbúnculo</label>
     </div>
     <div class="field" style="margin-top:10px"><label>Outros medicamentos</label><input id="rp_out"></div>
     <div class="actions">
@@ -1125,7 +1121,7 @@ async function salvarReproducao(animalId,ciclo){
   const tipo=v("rp_tipo").value, dg=v("rp_diag").value;
   const rec={ animal_id:animalId, ciclo, tipo,
     data_cobertura:v("rp_data").value||null,
-    vacina_reprodutiva:v("rp_repro").checked, vermifugo:v("rp_verm").checked, carbunculo:v("rp_carb").checked,
+    vacina_reprodutiva:v("rp_repro").checked, vermifugo:false, carbunculo:false,
     outros_medicamentos:v("rp_out").value.trim()||null,
     fase: dg,
     resultado_prenhez: dg==="prenhe"?true: dg==="vazia"?false:null,
@@ -1182,7 +1178,7 @@ function histReproducao(ciclos){
   if(!ciclos.length) return `<p class="muted">Sem registros de reprodução.</p>`;
   const resTag=c=>{
     if(c.fase==="aguardando") return `<span class="tag proc">AGUARDANDO</span>`;
-    if(c.resultado_prenhez===true) return `<span class="tag prenhe">PRENHE</span>`;
+    if(c.resultado_prenhez===true) return `<span class="tag prenhe">PRENHA</span>`;
     if(c.resultado_prenhez===false) return `<span class="tag vazia">VAZIA</span>`;
     if(c.fase==="parida") return `<span class="tag proc">PARIDA</span>`;
     return `<span class="tag proc">${(c.fase||"—").toUpperCase()}</span>`;
@@ -1324,7 +1320,7 @@ async function gerarRelatorio(){
     <div class="card">
       <h3>Fêmeas com 2 ou mais ciclos</h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Nº</th><th>Categoria</th><th>Total ciclos</th><th>Confirmados</th><th>Situação atual</th></tr></thead>
-      <tbody>${(ci.data||[]).length? (ci.data).map(f=>`<tr><td><b>${f.numero??"—"}</b></td><td>${esc(categoriaAnimal(LOCAL.animais.find(x=>x.id===f.animal_id)))||"—"}</td><td>${f.total_ciclos}</td><td>${f.ciclos_confirmados}</td><td>${f.situacao==="prenhe"?'<span class="tag prenhe">prenhe</span>':f.situacao==="vazia"?'<span class="tag vazia">vazia</span>':f.situacao==="parida"?'<span class="tag proc">parida</span>':'<span class="tag proc">'+esc(f.ultima_fase||'em processo')+'</span>'}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea com 2+ ciclos ainda.</td></tr>`}</tbody></table></div>
+      <tbody>${(ci.data||[]).length? (ci.data).map(f=>`<tr><td><b>${f.numero??"—"}</b></td><td>${esc(categoriaAnimal(LOCAL.animais.find(x=>x.id===f.animal_id)))||"—"}</td><td>${f.total_ciclos}</td><td>${f.ciclos_confirmados}</td><td>${f.situacao==="prenhe"?'<span class="tag prenhe">prenha</span>':f.situacao==="vazia"?'<span class="tag vazia">vazia</span>':f.situacao==="parida"?'<span class="tag proc">parida</span>':'<span class="tag proc">'+esc(f.ultima_fase||'em processo')+'</span>'}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea com 2+ ciclos ainda.</td></tr>`}</tbody></table></div>
     </div>`;
 }
 
