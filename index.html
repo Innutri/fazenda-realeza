@@ -167,6 +167,22 @@
     table.rt td .cellbtns{flex-wrap:wrap;justify-content:flex-end}
     table.rt td .cellbtns .btn{flex:1;min-width:80px;justify-content:center;padding:8px}
   }
+  /* Operacional / curral — letras grandes para uso no campo */
+  .curral h3{font-size:20px}
+  .curral h2{font-size:22px}
+  .curral .muted{font-size:15px}
+  .curral .field label{font-size:16px;font-weight:700}
+  .curral .field input,.curral .field select,.curral .field textarea{font-size:24px;padding:14px 16px;font-weight:600}
+  .curral .checks{gap:22px;margin-top:8px}
+  .curral .checks label{font-size:20px;gap:10px;font-weight:600}
+  .curral .checks input{width:26px;height:26px}
+  .curral .btn{font-size:22px;padding:16px 30px}
+  .curral table th{font-size:13px}
+  .curral table td{font-size:18px}
+  .curral .tag{font-size:15px;padding:5px 13px}
+  .curral .flowbox b{font-size:20px}
+  .curral .inline-list li{font-size:17px}
+  .curral .divider{margin:20px 0}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7"></script>
 <script>typeof supabase!=="undefined"||document.write('<script src="https://unpkg.com/@supabase/supabase-js@2.39.7"><\/script>')</script>
@@ -975,7 +991,7 @@ function renderOperacional(){
         <button type="submit" class="btn" style="font-size:28px;font-weight:800;padding:18px 48px">🔍 Buscar</button>
       </form>
     </div>
-    <div id="op-body"></div>`;
+    <div id="op-body" class="curral"></div>`;
   const inp=document.getElementById("op_cod"); if(inp) inp.focus();
 }
 let animalOp=null;
