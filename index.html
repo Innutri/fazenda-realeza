@@ -969,11 +969,11 @@ function renderOperacional(){
   app.innerHTML = `
     <div class="card" style="text-align:center;padding:26px 16px">
       <h3 style="font-size:19px;display:block;border:none">Buscar animal no curral</h3>
-      <p class="muted">Digite o número do animal e toque em Buscar (ou Enter).</p>
-      <div style="display:flex;gap:12px;justify-content:center;align-items:stretch;flex-wrap:wrap;margin-top:10px">
-        <input id="op_cod" type="number" inputmode="numeric" placeholder="Nº do animal" onkeydown="if(event.key==='Enter')buscarAnimalOp()" style="flex:1;min-width:170px;max-width:340px;font-size:40px;font-weight:800;text-align:center;padding:14px 16px;border:2px solid var(--linha);border-radius:12px">
-        <button class="btn" onclick="buscarAnimalOp()" style="font-size:22px;font-weight:700;padding:0 34px">🔍 Buscar</button>
-      </div>
+      <p class="muted">Digite o número do animal e toque em Buscar (ou "Ir" no teclado).</p>
+      <form onsubmit="buscarAnimalOp();return false;" style="display:flex;gap:14px;justify-content:center;align-items:stretch;flex-wrap:wrap;margin-top:10px">
+        <input id="op_cod" type="number" inputmode="numeric" enterkeyhint="search" placeholder="Nº do animal" style="flex:1;min-width:170px;max-width:340px;font-size:40px;font-weight:800;text-align:center;padding:14px 16px;border:2px solid var(--linha);border-radius:12px">
+        <button type="submit" class="btn" style="font-size:28px;font-weight:800;padding:18px 48px">🔍 Buscar</button>
+      </form>
     </div>
     <div id="op-body"></div>`;
   const inp=document.getElementById("op_cod"); if(inp) inp.focus();
