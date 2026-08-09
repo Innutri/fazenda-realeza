@@ -1,0 +1,1511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#153f2a" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Fazenda Realeza" />
+<title>Fazenda Realeza</title>
+<style>
+  :root{
+    --verde:#1f5c3d; --verde2:#2e7d54; --verde-esc:#153f2a;
+    --ouro:#c9a44a; --ouro-cl:#e6cf8a;
+    --bg:#f4f6f2; --card:#ffffff; --linha:#e2e7df;
+    --txt:#20272e; --txt2:#5d6b62; --erro:#b23b3b; --ok:#2e7d54;
+    --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  header.top{background:linear-gradient(135deg,var(--verde-esc),var(--verde));color:#fff;padding:14px 22px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow);position:sticky;top:0;z-index:20}
+  header.top .crown{font-size:26px}
+  header.top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.3px}
+  header.top h1 small{display:block;font-size:11px;font-weight:400;color:var(--ouro-cl);letter-spacing:2px;text-transform:uppercase}
+  header.top .status{margin-left:auto;font-size:12px;opacity:.9;display:flex;align-items:center;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#8a8;display:inline-block}
+  .dot.on{background:#7CFC9A;box-shadow:0 0 6px #7CFC9A}
+  .dot.off{background:#ff8a8a}
+  .switch{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px;user-select:none}
+  .switch input{accent-color:var(--ouro);width:15px;height:15px}
+  .databar{max-width:1080px;margin:-8px auto 40px;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--linha);border-radius:12px;box-shadow:var(--shadow)}
+  .databar .db-title{font-weight:700;color:var(--verde)}
+  .databar .db-hint{font-size:12px;color:var(--txt2);flex-basis:100%;margin-top:2px}
+  .saveind{font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;background:rgba(255,255,255,.16);color:#fff;white-space:nowrap;transition:background .2s}
+  .saveind.saving{background:var(--ouro);color:#3a2f10}
+  .saveind.saved{background:#dff3e6;color:#1f7a45}
+  .saveind.mem{background:#fbeecb;color:#8a5a12}
+  .saveind .pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:middle;animation:blink 1s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .savest{font-size:11px;font-weight:700;margin-left:auto;padding:3px 8px;border-radius:6px}
+  .savest.ok{color:var(--ok);background:#e1f4e6} .savest.err{color:var(--erro);background:#fdeaea} .savest.idle{color:var(--txt2)}
+
+  nav.tabs{display:flex;gap:2px;background:var(--verde);padding:0 12px;overflow-x:auto}
+  nav.tabs button{background:transparent;border:none;color:#dfeee6;padding:12px 18px;font-size:14px;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;font-weight:500}
+  nav.tabs button:hover{color:#fff;background:rgba(255,255,255,.06)}
+  nav.tabs button.active{color:#fff;border-bottom-color:var(--ouro);font-weight:600}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+  .subtabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .subtabs button{background:var(--card);border:1px solid var(--linha);color:var(--txt2);padding:8px 14px;border-radius:20px;cursor:pointer;font-size:13px}
+  .subtabs button.active{background:var(--verde2);color:#fff;border-color:var(--verde2);font-weight:600}
+  .subtabs.small button{padding:6px 12px;font-size:12px}
+
+  .card{background:var(--card);border:1px solid var(--linha);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .card h2{margin:0 0 4px;font-size:16px;color:var(--verde-esc)}
+  .card h3{margin:0 0 12px;font-size:14px;color:var(--verde);border-bottom:2px solid var(--ouro-cl);padding-bottom:6px;display:inline-block}
+  .muted{color:var(--txt2);font-size:12.5px;margin:0 0 14px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:12px;color:var(--txt2);font-weight:600}
+  .field input,.field select,.field textarea{padding:8px 10px;border:1px solid var(--linha);border-radius:8px;font-size:13px;background:#fff;font-family:inherit}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--verde2);box-shadow:0 0 0 3px rgba(46,125,84,.12)}
+  .checks{display:flex;flex-wrap:wrap;gap:14px;margin-top:4px}
+  .checks label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt);font-weight:500}
+
+  .btn{background:var(--verde2);color:#fff;border:none;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:600}
+  .btn:hover{background:var(--verde)}
+  .btn.ghost{background:transparent;color:var(--verde);border:1px solid var(--verde2)}
+  .btn.ghost:hover{background:#eef5f0}
+  .btn.gold{background:var(--ouro);color:#3a2f10}
+  .btn.gold:hover{background:#b8933f}
+  .btn.danger{background:transparent;color:var(--erro);border:1px solid #e0b4b4}
+  .btn.danger:hover{background:#fbeaea}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--linha)}
+  th{color:var(--txt2);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;background:#fafbf9}
+  tr:hover td{background:#fafcfa}
+  .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
+  .tag.femea{background:#fce7f0;color:#a83267}
+  .tag.macho{background:#e3eefc;color:#2c5aa8}
+  .tag.touro{background:#f3ead2;color:#7d6320}
+  .tag.prenhe{background:#e1f4e6;color:#1f7a45}
+  .tag.vazia{background:#fdeaea;color:#b23b3b}
+  .tag.proc{background:#fdf3e0;color:#9a6b1a}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+  .kpi{background:linear-gradient(135deg,#fff,#f7faf7);border:1px solid var(--linha);border-radius:12px;padding:16px;text-align:center}
+  .kpi .n{font-size:30px;font-weight:800;color:var(--verde)}
+  .kpi .l{font-size:12px;color:var(--txt2);margin-top:2px}
+  .kpi.gold .n{color:var(--ouro)}
+
+  .bar{height:22px;background:#eef1ec;border-radius:12px;overflow:hidden;display:flex;margin-top:6px}
+  .bar .seg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+  .seg.pr{background:var(--ok)} .seg.vz{background:var(--erro)} .seg.pc{background:var(--ouro)}
+
+  .numchips{display:flex;flex-wrap:wrap;gap:8px}
+  .numchip{background:#eef5f0;border:1px solid #cfe3d7;color:var(--verde);padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer}
+  .numchip:hover{background:var(--verde2);color:#fff}
+  .numchip.first{background:var(--ouro);color:#3a2f10;border-color:var(--ouro)}
+  .tourolist{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .tourocheck{display:flex;align-items:center;gap:6px;background:#f6f8f5;border:1px solid var(--linha);padding:7px 11px;border-radius:8px;font-size:13px;cursor:pointer;user-select:none}
+  .tourocheck:hover{border-color:var(--verde2)}
+  .tourocheck input{width:15px;height:15px;accent-color:var(--verde2)}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#20272e;color:#fff;padding:12px 20px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.25);z-index:100;font-size:13.5px;opacity:0;transition:opacity .25s,bottom .25s;pointer-events:none}
+  .toast.show{opacity:1;bottom:32px}
+  .toast.err{background:var(--erro)} .toast.ok{background:var(--ok)}
+
+  .empty{text-align:center;color:var(--txt2);padding:30px;font-size:13px}
+  .placeholder{text-align:center;padding:50px 20px;color:var(--txt2)}
+  .placeholder .ic{font-size:48px;opacity:.4}
+  .flowbox{border:1px dashed var(--ouro);background:#fffdf6;border-radius:10px;padding:16px;margin-top:14px}
+  .flowsteps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .flowstep{flex:1;min-width:90px;text-align:center;padding:8px;border-radius:8px;background:#f0f2ee;color:var(--txt2);font-size:12px;font-weight:600}
+  .flowstep.done{background:#e1f4e6;color:var(--ok)}
+  .flowstep.cur{background:var(--verde2);color:#fff}
+  .inline-list{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+  .inline-list li{background:#f6f8f5;border:1px solid var(--linha);padding:6px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+  .divider{height:1px;background:var(--linha);margin:16px 0}
+  .modal-bg{position:fixed;inset:0;background:rgba(21,31,25,.55);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:30px 14px;overflow-y:auto}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--card);border-radius:14px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;margin:auto}
+  .modal-head{background:linear-gradient(135deg,var(--verde-esc),var(--verde));color:#fff;padding:16px 20px;display:flex;align-items:center;gap:10px}
+  .modal-head b{font-size:17px} .modal-head .x{margin-left:auto;background:rgba(255,255,255,.15);border:none;color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px}
+  .modal-head .x:hover{background:rgba(255,255,255,.3)}
+  .modal-body{padding:18px 20px;max-height:70vh;overflow-y:auto}
+  .modal-body h4{margin:16px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2);border-bottom:1px solid var(--linha);padding-bottom:5px}
+  .modal-body h4:first-child{margin-top:0}
+  .dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 18px}
+  .dl .it{font-size:13px} .dl .it .k{color:var(--txt2);font-size:11px;display:block} .dl .it .val{font-weight:600}
+  .modal-foot{padding:12px 20px;border-top:1px solid var(--linha);display:flex;gap:10px;justify-content:flex-end;background:#fafbf9}
+  .cellbtns{display:flex;gap:6px;justify-content:flex-end}
+  .lnk{color:var(--verde2);cursor:pointer;font-weight:700;text-decoration:none}
+  .lnk:hover{text-decoration:underline}
+  @media(max-width:640px){
+    .wrap{padding:14px 10px 50px}
+    header.top{padding:11px 14px;gap:8px}
+    header.top h1{font-size:16px}
+    header.top h1 small{font-size:9px;letter-spacing:1.5px}
+    header.top .crown{font-size:20px}
+    header.top .status{font-size:10px}
+    header.top #conn-txt{display:none}
+    .saveind{font-size:10px;padding:3px 7px}
+    nav.tabs{padding:0 8px}
+    nav.tabs button{padding:11px 14px;font-size:13px}
+    .card{padding:14px 14px}
+    .card h3{font-size:14px}
+    .grid{grid-template-columns:1fr;gap:12px}
+    .actions .btn{width:100%;justify-content:center}
+    .databar{flex-direction:column;align-items:stretch;text-align:center}
+    .databar .btn{width:100%;justify-content:center}
+    .kpis{grid-template-columns:1fr 1fr}
+    .modal{max-width:100%;border-radius:12px}
+    .modal-foot{flex-direction:column-reverse}
+    .modal-foot .btn{width:100%;justify-content:center}
+    /* listas viram cartões */
+    table.rt thead{display:none}
+    table.rt, table.rt tbody, table.rt tr, table.rt td{display:block;width:100%}
+    table.rt tr{border:1px solid var(--linha);border-radius:10px;margin-bottom:10px;padding:8px 12px;background:#fff;box-shadow:var(--shadow)}
+    table.rt td{border:none;padding:5px 0;display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:13.5px}
+    table.rt td::before{content:attr(data-label);color:var(--txt2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+    table.rt td[data-label=""]::before,table.rt td:not([data-label])::before{content:""}
+    table.rt td .cellbtns{flex-wrap:wrap;justify-content:flex-end}
+    table.rt td .cellbtns .btn{flex:1;min-width:80px;justify-content:center;padding:8px}
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7"></script>
+<script>typeof supabase!=="undefined"||document.write('<script src="https://unpkg.com/@supabase/supabase-js@2.39.7"><\/script>')</script>
+</head>
+<body>
+<header class="top">
+  <span class="crown">♛</span>
+  <h1>Fazenda Realeza<small>Gestão do Rebanho</small></h1>
+  <span id="save-indicator" class="saveind" title="Estado da gravação">pronto</span>
+  <div class="status" title="Dados salvos no Supabase (nuvem)."><span id="conn-dot" class="dot"></span><span id="conn-txt">conectando…</span></div>
+</header>
+
+<nav class="tabs" id="main-tabs">
+  <button data-tab="rebanho" class="active">Rebanho</button>
+  <button data-tab="cadastros">Cadastros</button>
+  <button data-tab="maquinas">Máquinas</button>
+  <button data-tab="suplementacao">Suplementação</button>
+  <button data-tab="operacional">Operacional</button>
+  <button data-tab="relatorios">Relatórios</button>
+</nav>
+
+<div class="wrap" id="app"></div>
+<div class="databar">
+  <span class="db-title">☁️ Supabase</span>
+  <button class="btn ghost sm" onclick="exportarDB()">⬇ Baixar backup</button>
+  <span class="db-hint" id="db-hint"></span>
+</div>
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modal-bg" onclick="fecharModalBg(event)"><div class="modal" id="modal"></div></div>
+
+<script>
+// ================= CONEXÃO SUPABASE =================
+// Os dados vivem no Supabase (nuvem). O app mantém um cache (LOCAL) carregado
+// no início; cada gravação é espelhada no Supabase (write-through).
+const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
+const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
+// fetch via XMLHttpRequest — evita extensões/automação que "embrulham" o window.fetch
+// e quebram com DataCloneError (postMessage de Headers). O Supabase usa este fetch.
+function xhrFetch(url, opts){
+  opts=opts||{};
+  var alvo=(typeof url==="string")?url:(url&&url.url)||String(url);
+  return new Promise(function(resolve,reject){
+    var xhr=new XMLHttpRequest();
+    xhr.open(opts.method||"GET", alvo, true);
+    var h=opts.headers||{};
+    if(h && typeof h.forEach==="function"){ h.forEach(function(v,k){ try{xhr.setRequestHeader(k,v);}catch(e){} }); }
+    else { for(var k in h){ try{xhr.setRequestHeader(k,h[k]);}catch(e){} } }
+    xhr.onload=function(){
+      var map={}; (xhr.getAllResponseHeaders()||"").trim().split(/\r?\n/).forEach(function(line){
+        var i=line.indexOf(":"); if(i>0){ map[line.slice(0,i).trim().toLowerCase()]=line.slice(i+1).trim(); }
+      });
+      var body=xhr.responseText;
+      resolve({
+        ok: xhr.status>=200 && xhr.status<300,
+        status: xhr.status, statusText: xhr.statusText, url: alvo,
+        headers: { get:function(k){ var v=map[String(k).toLowerCase()]; return v===undefined?null:v; },
+                   has:function(k){ return String(k).toLowerCase() in map; },
+                   forEach:function(cb){ for(var k in map) cb(map[k],k); } },
+        text:function(){ return Promise.resolve(body); },
+        json:function(){ return Promise.resolve(body?JSON.parse(body):null); }
+      });
+    };
+    xhr.onerror=function(){ reject(new TypeError("Network request failed")); };
+    xhr.ontimeout=function(){ reject(new TypeError("Network request timed out")); };
+    xhr.send(opts.body!==undefined?opts.body:null);
+  });
+}
+const RS = supabase.createClient(SB_URL, SB_KEY, { auth:{persistSession:false, autoRefreshToken:false}, global:{ fetch: xhrFetch } });
+const LOCAL = { animais:[], operacoes_rebanho:[], reproducao:[], reproducao_touros:[], pastos:[], lotes:[], medicamentos:[], protocolos:[], racas:[], classificacoes:[], equipes:[] };
+const TABELAS = Object.keys(LOCAL);
+let _online=false;
+function defaultsFor(t){
+  if(t==="animais") return {arquivado:false,status:"ativo",origem:"nascimento",codigo_arquivo:null,numero_original:null,indices:{}};
+  if(t==="operacoes_rebanho") return {vermifugo:false,carbunculo:false,vacina_reprodutiva:false};
+  if(t==="reproducao") return {ciclo:1,fase:"aguardando",vacina_reprodutiva:false,vermifugo:false,carbunculo:false,resultado_prenhez:null};
+  return {};
+}
+function faixaDe(m){ if(m==null) return "sem_data"; if(m<=12) return "0-12"; if(m<=24) return "13-24"; return "25+"; }
+function femeaRepro(f){
+  const ciclos = LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>b.ciclo-a.ciclo);
+  const ultimo = ciclos[0]||null;
+  let situacao="sem_registro";
+  if(ultimo){
+    if(ultimo.fase==="prenhe") situacao="prenhe";
+    else if(ultimo.fase==="vazia") situacao="vazia";
+    else if(ultimo.fase==="parida") situacao="parida";
+    else situacao="em_processo";
+  }
+  return { animal_id:f.id, numero:f.numero,
+    total_ciclos:ciclos.length,
+    ciclos_confirmados:ciclos.filter(r=>r.resultado_prenhez!=null).length,
+    situacao,
+    ultimo_resultado: ultimo? (ultimo.resultado_prenhez ?? null) : null,
+    ultima_fase: ultimo? ultimo.fase : null };
+}
+function viewRows(name){
+  const ativos = LOCAL.animais.filter(a=>!a.arquivado);
+  if(name==="vw_contagem_tipo"){ const g={}; ativos.forEach(a=>g[a.tipo]=(g[a.tipo]||0)+1); return Object.keys(g).map(t=>({tipo:t,total:g[t]})); }
+  if(name==="vw_faixa_etaria"){ const g={}; ativos.forEach(a=>{const k=a.tipo+"|"+faixaDe(idadeMeses(a.data_nascimento)); g[k]=(g[k]||0)+1;}); return Object.keys(g).map(k=>({tipo:k.split("|")[0],faixa:k.split("|")[1],total:g[k]})); }
+  if(name==="vw_femea_reproducao"){ return ativos.filter(a=>a.tipo==="femea").map(femeaRepro); }
+  if(name==="vw_resumo_reproducao"){ const fs=ativos.filter(a=>a.tipo==="femea").map(femeaRepro);
+    return [{ total_femeas:fs.length,
+      prenhes:fs.filter(f=>f.situacao==="prenhe").length,
+      vazias:fs.filter(f=>f.situacao==="vazia").length,
+      paridas:fs.filter(f=>f.situacao==="parida").length,
+      em_processo:fs.filter(f=>f.situacao==="em_processo").length,
+      sem_registro:fs.filter(f=>f.situacao==="sem_registro").length,
+      com_2_ou_mais_ciclos:fs.filter(f=>f.total_ciclos>=2).length }]; }
+  return [];
+}
+class Q {
+  constructor(t){ this.t=t; this.f=[]; this.op="select"; this.cols="*"; this.head=false; this.ord=null; this.lim=null; this.one=false; this.payload=null; }
+  select(cols,opts){ this.op="select"; this.cols=cols||"*"; if(opts&&opts.head) this.head=true; return this; }
+  insert(p){ this.op="insert"; this.payload=p; return this; }
+  update(p){ this.op="update"; this.payload=p; return this; }
+  eq(c,v){ this.f.push(r=>r[c]===v); return this; }
+  neq(c,v){ this.f.push(r=>r[c]!==v); return this; }
+  gte(c,v){ this.f.push(r=>r[c]>=v); return this; }
+  order(c,o){ this.ord={c,asc:!(o&&o.ascending===false),nf:o&&o.nullsFirst}; return this; }
+  limit(n){ this.lim=n; return this; }
+  maybeSingle(){ this.one=true; return this; }
+  single(){ this.one=true; return this; }
+  then(res,rej){ return Promise.resolve(this._run()).then(res,rej); }
+  _base(){ return this.t.startsWith("vw_") ? viewRows(this.t) : (LOCAL[this.t]||[]); }
+  async _run(){
+    if(this.op==="insert"){
+      const recs=Array.isArray(this.payload)?this.payload:[this.payload]; const out=[];
+      for(const r of recs){
+        const doc=Object.assign({},defaultsFor(this.t),r); delete doc.id;
+        if(doc.created_at===undefined) doc.created_at=new Date().toISOString();
+        if(this.t==="animais" && doc.numero!=null && !doc.arquivado && LOCAL.animais.some(a=>!a.arquivado&&a.numero===doc.numero))
+          return {data:null,error:{code:"23505",message:"número duplicado"}};
+        const { data, error } = await RS.from(this.t).insert({doc}).select("id").single();
+        if(error) return {data:null,error};
+        const row=Object.assign({},doc,{id:data.id}); LOCAL[this.t].push(row); out.push(row);
+      }
+      flashSave();
+      return {data:out,error:null};
+    }
+    if(this.op==="update"){
+      const rows=LOCAL[this.t].filter(r=>this.f.every(fn=>fn(r)));
+      for(const r of rows){
+        Object.assign(r,this.payload);
+        const {id, ...doc}=r;
+        const { error } = await RS.from(this.t).update({doc}).eq("id",id);
+        if(error) return {data:null,error};
+      }
+      flashSave();
+      return {data:rows,error:null};
+    }
+    let rows=this._base().filter(r=>this.f.every(fn=>fn(r)));
+    if(this.t==="reproducao_touros" && /animais\(/.test(this.cols))
+      rows=rows.map(r=>Object.assign({},r,{animais: r.touro_id? {numero:(LOCAL.animais.find(a=>a.id===r.touro_id)||{}).numero}:null}));
+    if(this.ord){ const {c,asc,nf}=this.ord; rows=rows.slice().sort((a,b)=>{
+      let x=a[c],y=b[c]; if(x==null&&y==null)return 0; if(x==null)return nf?-1:1; if(y==null)return nf?1:-1;
+      return x<y?(asc?-1:1):x>y?(asc?1:-1):0; }); }
+    if(this.lim!=null) rows=rows.slice(0,this.lim);
+    if(this.head) return {data:null,count:rows.length,error:null};
+    if(this.one) return {data:rows[0]??null,error:null};
+    return {data:rows,error:null,count:rows.length};
+  }
+}
+function numerosLivres(limite){
+  const usados=new Set(LOCAL.animais.filter(a=>!a.arquivado&&a.numero!=null).map(a=>a.numero));
+  const max=Math.max(0,...usados); const out=[];
+  for(let n=1;n<=Math.max(max+limite,limite)&&out.length<limite;n++) if(!usados.has(n)) out.push({numero:n});
+  return out;
+}
+const sb = {
+  from:(t)=>new Q(t),
+  rpc: async (name,args)=>{
+    if(name==="proximo_numero_disponivel"){ const l=numerosLivres(1); return {data:l.length?l[0].numero:1,error:null}; }
+    if(name==="numeros_disponiveis"){ return {data:numerosLivres((args&&args.p_limite)||30),error:null}; }
+    if(name==="arquivar_animal"){ const a=LOCAL.animais.find(x=>x.id===args.p_id);
+      if(!a) return {data:null,error:{message:"não encontrado"}};
+      a.numero_original=a.numero; a.codigo_arquivo="A"+(a.numero??a.id); a.numero=null; a.arquivado=true; a.status=args.p_status||"vendido";
+      const {id, ...doc}=a; const { error } = await RS.from("animais").update({doc}).eq("id",id);
+      flashSave(); return {data:a,error}; }
+    return {data:null,error:{message:"rpc "+name+" indisponível"}};
+  }
+};
+function flashSave(){
+  const el=document.getElementById("save-indicator"); if(!el) return;
+  el.innerHTML='<span class="pulse"></span>salvando…'; el.className="saveind saving";
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>{
+    const t=new Date(), p=n=>String(n).padStart(2,"0");
+    el.textContent="salvo "+p(t.getHours())+":"+p(t.getMinutes())+":"+p(t.getSeconds()); el.className="saveind saved";
+  }, 220);
+}
+function exportarDB(){
+  const blob=new Blob([JSON.stringify({LOCAL},null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  a.href=url; a.download="fazenda-realeza-backup.json"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast("Backup baixado.","ok");
+}
+let _lastErr=null;
+async function _lerPagina(t, from, page){
+  let err;
+  for(let tent=0; tent<4; tent++){
+    const { data, error } = await RS.from(t).select("id,doc").range(from, from+page-1);
+    if(!error) return data||[];
+    err=error; await new Promise(r=>setTimeout(r, 500*(tent+1)));
+  }
+  throw err;
+}
+async function carregarDoSupabase(){
+  for(const t of TABELAS){
+    let from=0; const page=1000; let all=[];
+    while(true){
+      const data = await _lerPagina(t, from, page);
+      all = all.concat(data);
+      if(data.length < page) break;
+      from += page;
+    }
+    LOCAL[t] = all.map(r=>Object.assign({}, r.doc, {id:r.id}));
+  }
+}
+function msgErro(e){
+  if(!e) return "falha de rede";
+  return e.message || e.error_description || e.details || e.hint || (typeof e==="string"?e:JSON.stringify(e));
+}
+function renderErroConexao(){
+  const el=$("#save-indicator"); if(el){ el.textContent="offline"; el.className="saveind mem"; }
+  app.innerHTML=`<div class="card placeholder">
+    <div class="ic">☁️</div>
+    <h2>Não foi possível conectar ao banco agora</h2>
+    <p class="muted">O Supabase não respondeu (${esc(msgErro(_lastErr))}). Isso costuma ser temporário — tente de novo.</p>
+    <div class="actions" style="justify-content:center;margin-top:10px"><button class="btn" onclick="iniciarApp()">Tentar novamente</button></div>
+  </div>`;
+}
+async function iniciarApp(){
+  const el=$("#save-indicator"); if(el){ el.innerHTML='<span class="pulse"></span>carregando…'; el.className="saveind saving"; }
+  try{ await carregarDoSupabase(); _online=true; _lastErr=null; }
+  catch(e){ _online=false; _lastErr=e; console.error("Supabase:", msgErro(e), e); }
+  checkConn();
+  if(_online){ if(el){ el.textContent="pronto"; el.className="saveind"; } render(); }
+  else { renderErroConexao(); }
+}
+
+// ================= HELPERS =================
+const $ = (s,r=document)=>r.querySelector(s);
+const app = $("#app");
+let state = { tab:"rebanho", sub:{} };
+
+function toast(msg, type=""){
+  const t=$("#toast"); t.textContent=msg; t.className="toast show "+type;
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
+}
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtDate(d){ if(!d) return "—"; const p=d.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+function idadeMeses(d){ if(!d) return null; const n=new Date(), b=new Date(d); return (n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth()); }
+function idadeTxt(d){ const m=idadeMeses(d); if(m===null) return "—"; const a=Math.floor(m/12), r=m%12; return a>0?`${a}a ${r}m`:`${m}m`; }
+// Categoria automática por idade e sexo (touro não classifica)
+function categoriaAnimal(a){
+  if(!a || a.tipo==="touro") return "";
+  const m=idadeMeses(a.data_nascimento);
+  if(m==null) return "sem data";
+  if(a.tipo==="femea") return m<=12?"bezerra": m<=24?"novilha":"vaca";
+  return m<=12?"bezerro": m<=20?"garrote":"boi";
+}
+function checkConn(){
+  const dot=$("#conn-dot"), txt=$("#conn-txt"), hint=$("#db-hint");
+  if(_online){ dot.className="dot on"; txt.textContent="Supabase • online"; }
+  else { dot.className="dot off"; txt.textContent="Supabase • offline"; }
+  if(hint) hint.textContent = _online
+    ? "Dados salvos no Supabase (nuvem), compartilhados entre celular e computador."
+    : "Sem conexão com o Supabase agora. Recarregue a página para tentar de novo.";
+}
+
+// ================= NAV =================
+document.querySelectorAll("#main-tabs button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll("#main-tabs button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active"); state.tab=b.dataset.tab; render();
+  };
+});
+
+function subnav(items, key, def){
+  const cur = state.sub[key] || def;
+  return `<div class="subtabs" data-subkey="${key}">`+
+    items.map(i=>`<button data-sub="${i.id}" class="${cur===i.id?'active':''}">${i.label}</button>`).join("")+
+    `</div>`;
+}
+function bindSub(){
+  document.querySelectorAll(".subtabs").forEach(nav=>{
+    const key=nav.dataset.subkey;
+    nav.querySelectorAll("button").forEach(b=>{
+      b.onclick=()=>{ state.sub[key]=b.dataset.sub; render(); };
+    });
+  });
+}
+
+// ================= RENDER ROUTER =================
+function render(){
+  window.scrollTo(0,0);
+  if(state.tab==="rebanho") return renderRebanho();
+  if(state.tab==="cadastros") return renderCadastros();
+  if(state.tab==="operacional") return renderOperacional();
+  if(state.tab==="relatorios") return renderRelatorios();
+  if(state.tab==="maquinas") return placeholder("🚜","Máquinas","Controle de equipamentos, horímetro, manutenções e abastecimento. Módulo em construção.");
+  if(state.tab==="suplementacao") return placeholder("🌾","Suplementação","Cadastro de dietas, consumo de suplemento e custo por lote. Módulo em construção.");
+}
+function placeholder(ic,t,d){
+  app.innerHTML=`<div class="card placeholder"><div class="ic">${ic}</div><h2>${t}</h2><p class="muted">${d}</p></div>`;
+}
+
+// ============================================================
+// REBANHO
+// ============================================================
+function renderRebanho(){
+  const sub = state.sub.rebanho || "cadastro";
+  let html = subnav([
+    {id:"cadastro",label:"Cadastro"},
+    {id:"registros",label:"Registros"},
+    {id:"numeros",label:"Números disponíveis"},
+  ],"rebanho","cadastro");
+  app.innerHTML = html + `<div id="rebanho-body"></div>`;
+  bindSub();
+  if(sub==="cadastro") renderCadastro();
+  else if(sub==="registros") renderRegistros();
+  else renderNumeros();
+}
+
+// --------- CADASTRO (Rebanho: animais) ---------
+function renderCadastro(){
+  const body=$("#rebanho-body");
+  const cs = state.sub.cadastro || "touro";
+  body.innerHTML = subnav([
+    {id:"touro",label:"Touros reprodutores"},
+    {id:"femea",label:"Fêmeas"},
+    {id:"macho",label:"Machos"},
+  ],"cadastro","touro") + `<div id="cad-form"></div><div id="cad-list"></div>`;
+  bindSub();
+  if(cs==="touro") formTouro(); else if(cs==="femea") formFemea(); else formMacho();
+  listaAnimais(cs);
+}
+
+// --------- OUTROS CADASTROS ---------
+const OUTROS_CFG = {
+  pastos: { titulo:"Pastos / Piquetes", singular:"Pasto", campos:[
+    {id:"nome",label:"Nome do pasto/piquete",req:true},
+    {id:"area_ha",label:"Área (ha)",ctrl:"number"},
+    {id:"capacidade",label:"Capacidade (nº animais)",ctrl:"number"},
+    {id:"forragem",label:"Forragem/Tipo"},
+  ], colunas:[["nome","Nome"],["area_ha","Área (ha)"],["capacidade","Capacidade"],["forragem","Forragem"]] },
+  lotes: { titulo:"Lotes / Grupos", singular:"Lote", campos:[
+    {id:"nome",label:"Nome do lote",req:true},
+    {id:"finalidade",label:"Finalidade",ctrl:"select",opcoes:[["cria","Cria"],["recria","Recria"],["engorda","Engorda"],["matrizes","Matrizes"],["reproducao","Reprodução"]]},
+    {id:"pasto",label:"Pasto/Piquete atual"},
+  ], colunas:[["nome","Nome"],["finalidade","Finalidade"],["pasto","Pasto"]] },
+  medicamentos: { titulo:"Medicamentos / Vacinas", singular:"Produto", campos:[
+    {id:"nome",label:"Nome do produto",req:true},
+    {id:"tipo",label:"Tipo",ctrl:"select",opcoes:[["vacina","Vacina"],["vermifugo","Vermífugo"],["antibiotico","Antibiótico"],["hormonio","Hormônio"],["mineral","Mineral/Suplemento"],["outro","Outro"]]},
+    {id:"fabricante",label:"Fabricante"},
+  ], colunas:[["nome","Nome"],["tipo","Tipo"],["fabricante","Fabricante"]] },
+  protocolos: { titulo:"Protocolos (IATF/sanitário)", singular:"Protocolo", campos:[
+    {id:"nome",label:"Nome do protocolo",req:true},
+    {id:"tipo",label:"Tipo",ctrl:"select",opcoes:[["iatf","IATF"],["sanitario","Sanitário"]]},
+    {id:"descricao",label:"Descrição / passos",ctrl:"textarea"},
+  ], colunas:[["nome","Nome"],["tipo","Tipo"],["descricao","Descrição"]] },
+  racas: { titulo:"Raças", singular:"Raça", campos:[
+    {id:"nome",label:"Nome da raça",req:true},
+    {id:"grupo",label:"Grupo",ctrl:"select",opcoes:[["zebuino","Zebuíno"],["taurino","Taurino"],["cruzado","Cruzado"],["outro","Outro"]]},
+  ], colunas:[["nome","Raça"],["grupo","Grupo"]] },
+  classificacoes: { titulo:"Classificação genética", singular:"Classificação", campos:[
+    {id:"nome",label:"Nome / sigla (ex: PO, PC, Elite)",req:true},
+    {id:"descricao",label:"Descrição",ctrl:"textarea"},
+  ], colunas:[["nome","Nome"],["descricao","Descrição"]] },
+  equipes: { titulo:"Equipes de touro", singular:"Equipe", campos:[
+    {id:"nome",label:"Nome da equipe",req:true},
+    {id:"touros",label:"Touros da equipe (nº / nomes)",ctrl:"textarea"},
+    {id:"pasto",label:"Pasto / Piquete"},
+  ], colunas:[["nome","Equipe"],["touros","Touros"],["pasto","Pasto"]] },
+};
+// --------- CADASTROS (aba principal) ---------
+function renderCadastros(){
+  const os = state.sub.outros || "pastos";
+  app.innerHTML = subnav([
+    {id:"pastos",label:"Pastos / Piquetes"},
+    {id:"lotes",label:"Lotes"},
+    {id:"medicamentos",label:"Medic./Vacinas"},
+    {id:"protocolos",label:"Protocolos"},
+    {id:"racas",label:"Raças"},
+    {id:"classificacoes",label:"Class. genética"},
+    {id:"equipes",label:"Equipes de touro"},
+  ],"outros","pastos") + `<div id="outros-body"></div>`;
+  bindSub();
+  formOutro(os);
+}
+function rotuloValor(cfg, fieldId, val){
+  const f=cfg.campos.find(x=>x.id===fieldId);
+  if(f&&f.opcoes){ const o=f.opcoes.find(o=>o[0]===val); return o?o[1]:val; }
+  return val;
+}
+function formOutro(tipo){
+  if(tipo==="equipes"){ formEquipe(); return; }
+  const cfg=OUTROS_CFG[tipo];
+  const campos=cfg.campos.map(f=>{
+    if(f.ctrl==="select") return `<div class="field"><label>${f.label}</label><select id="o_${f.id}">${f.opcoes.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select></div>`;
+    if(f.ctrl==="textarea") return `<div class="field"><label>${f.label}</label><textarea id="o_${f.id}" rows="2"></textarea></div>`;
+    return `<div class="field"><label>${f.label}${f.req?" *":""}</label><input id="o_${f.id}" type="${f.ctrl==="number"?"number":"text"}" ${f.ctrl==="number"?'step="0.01"':""}></div>`;
+  }).join("");
+  $("#outros-body").innerHTML=`
+    <div class="card"><h3>${cfg.titulo}</h3>
+      <div class="grid">${campos}</div>
+      <div class="field" style="margin-top:12px"><label>Observações</label><textarea id="o_obs" rows="2"></textarea></div>
+      <div class="actions"><button class="btn" onclick="salvarOutro('${tipo}')">Salvar</button></div>
+    </div>
+    <div id="outros-list"></div>`;
+  listaOutro(tipo);
+}
+async function salvarOutro(tipo){
+  const cfg=OUTROS_CFG[tipo];
+  const v=id=>{const el=document.getElementById(id);return el?el.value.trim():"";};
+  const rec={};
+  cfg.campos.forEach(f=>{ const val=v("o_"+f.id); rec[f.id]=(f.ctrl==="number"&&val)?parseFloat(val):(val||null); });
+  rec.observacoes=v("o_obs")||null;
+  const req=cfg.campos.find(f=>f.req);
+  if(req && !rec[req.id]){ toast("Informe: "+req.label,"err"); return; }
+  const {error}=await sb.from(tipo).insert(rec);
+  if(error) return toast("Erro: "+error.message,"err");
+  toast(cfg.singular+" cadastrado!","ok"); formOutro(tipo);
+}
+async function listaOutro(tipo){
+  const cfg=OUTROS_CFG[tipo];
+  const {data}=await sb.from(tipo).select("*");
+  const el=$("#outros-list");
+  if(!data||!data.length){ el.innerHTML=`<div class="card"><div class="empty">Nenhum cadastro ainda.</div></div>`; return; }
+  const th=cfg.colunas.map(c=>`<th>${c[1]}</th>`).join("")+"<th></th>";
+  const rows=data.map(r=>`<tr>${cfg.colunas.map(c=>`<td data-label="${c[1]}">${esc(rotuloValor(cfg,c[0],r[c[0]]))||"—"}</td>`).join("")}<td><button class="btn danger sm" onclick="excluirOutro('${tipo}','${r.id}')">Excluir</button></td></tr>`).join("");
+  el.innerHTML=`<div class="card"><h3>${cfg.titulo} cadastrados (${data.length})</h3><div style="overflow-x:auto"><table class="rt"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+async function excluirOutro(tipo,id){
+  if(!confirm("Excluir este cadastro?")) return;
+  const { error } = await RS.from(tipo).delete().eq("id",id);
+  if(error) return toast("Erro: "+error.message,"err");
+  LOCAL[tipo]=(LOCAL[tipo]||[]).filter(r=>r.id!==id);
+  flashSave(); toast("Excluído.",""); listaOutro(tipo);
+}
+// --------- Cadastro de EQUIPE DE TOURO (seleção de touros cadastrados) ---------
+async function formEquipe(){
+  const { data:touros } = await sb.from("animais").select("id,numero,raca").eq("tipo","touro").eq("arquivado",false).order("numero");
+  const lista=(touros||[]);
+  const checks = lista.length
+    ? lista.map(t=>`<label class="tourocheck"><input type="checkbox" class="eq_touro" value="${t.id}" data-num="${t.numero}"> <b>nº ${t.numero}</b> ${esc(t.raca)||""}</label>`).join("")
+    : `<p class="muted">Nenhum touro cadastrado. Cadastre em Rebanho → Cadastro → Touros reprodutores.</p>`;
+  $("#outros-body").innerHTML=`
+    <div class="card"><h3>Equipes de touro</h3>
+      <p class="muted">Monte a equipe selecionando os touros cadastrados — o código (nº) de cada um fica registrado.</p>
+      <div class="grid">
+        <div class="field"><label>Nome da equipe *</label><input id="eq_nome" placeholder="ex: Equipe Pasto 1"></div>
+        <div class="field"><label>Pasto / Piquete</label><input id="eq_pasto"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>Touros da equipe (selecione)</label>
+        <div class="tourolist">${checks}</div>
+      </div>
+      <div class="actions"><button class="btn" onclick="salvarEquipe()">Salvar equipe</button></div>
+    </div>
+    <div id="outros-list"></div>`;
+  listaOutro("equipes");
+}
+async function salvarEquipe(){
+  const nome=document.getElementById("eq_nome").value.trim();
+  if(!nome) return toast("Informe o nome da equipe.","err");
+  const sel=[...document.querySelectorAll(".eq_touro:checked")];
+  if(!sel.length && !confirm("Nenhum touro selecionado. Salvar a equipe mesmo assim?")) return;
+  const rec={
+    nome,
+    pasto: document.getElementById("eq_pasto").value.trim()||null,
+    touros_ids: sel.map(c=>c.value),
+    touros: sel.map(c=>"nº "+c.dataset.num).join(", ")||null,
+  };
+  const { error } = await sb.from("equipes").insert(rec);
+  if(error) return toast("Erro: "+error.message,"err");
+  toast("Equipe cadastrada!","ok"); formEquipe();
+}
+
+async function sugestaoNumero(inputId){
+  const { data } = await sb.rpc("proximo_numero_disponivel");
+  const inp=document.getElementById(inputId);
+  if(inp && !inp.value && data!=null) inp.value=data;
+}
+
+// ---- Índices genéticos (DEP) do touro ----
+const INDICES_TOURO = [
+  ["PD-ED","Peso ao Desmame (Direto)"],
+  ["PS-ED","Peso Sobreano (Direto)"],
+  ["PM-EM","Peso Materno (Efeito Materno)"],
+  ["IPP","Idade ao 1º Parto"],
+  ["STAY","Stayability (Permanência)"],
+  ["PE-365","Perímetro Escrotal aos 365d"],
+  ["AOL","Área de Olho de Lombo"],
+  ["ACAB","Acabamento de Carcaça"],
+];
+function idxKey(c){ return c.replace(/[^A-Za-z0-9]/g,"_"); }
+function formIndices(ind){
+  ind=ind||{};
+  return `<div class="card" style="box-shadow:none;border-style:dashed;background:#fbfdfb;margin-top:6px">
+    <h3>Índices genéticos (DEP)</h3>
+    <p class="muted">DEP de cada característica e, se tiver, a acurácia / TOP % ao lado.</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>Característica</th><th>DEP</th><th>Acur. / TOP %</th></tr></thead><tbody>`
+    + INDICES_TOURO.map(function(par){ var c=par[0],n=par[1],k=idxKey(c),o=ind[c]||{};
+        return `<tr>
+          <td><b>${c}</b><br><span class="muted" style="font-size:11px">${n}</span></td>
+          <td><input id="idx_${k}" type="number" step="0.001" value="${o.dep!=null?o.dep:""}" style="max-width:120px" placeholder="DEP"></td>
+          <td><input id="ide_${k}" type="number" step="0.01" value="${o.de!=null?o.de:""}" style="max-width:100px" placeholder="—"></td>
+        </tr>`;
+      }).join("")
+    + `</tbody></table></div></div>`;
+}
+function coletarIndices(){
+  var ind={};
+  INDICES_TOURO.forEach(function(par){ var c=par[0],k=idxKey(c);
+    var d=document.getElementById("idx_"+k), e=document.getElementById("ide_"+k);
+    var dv=(d&&d.value.trim()!=="")?parseFloat(d.value):null;
+    var ev=(e&&e.value.trim()!=="")?parseFloat(e.value):null;
+    if(dv!=null||ev!=null) ind[c]={dep:dv, de:ev};
+  });
+  return ind;
+}
+function fichaIndices(ind){
+  ind=ind||{};
+  var linhas=INDICES_TOURO.filter(function(par){ return ind[par[0]]; });
+  if(!linhas.length) return "";
+  return `<h4>Índices genéticos (DEP)</h4><div style="overflow-x:auto"><table><thead><tr><th>Característica</th><th>DEP</th><th>Acur./TOP</th></tr></thead><tbody>`
+    + linhas.map(function(par){ var c=par[0],n=par[1],o=ind[c];
+        return `<tr><td><b>${c}</b> <span class="muted">${n}</span></td><td>${o.dep!=null?o.dep:"—"}</td><td>${o.de!=null?o.de:"—"}</td></tr>`; }).join("")
+    + `</tbody></table></div>`;
+}
+
+function formTouro(){
+  $("#cad-form").innerHTML = `
+  <div class="card">
+    <h3>Cadastro de Touro Reprodutor</h3>
+    <div class="grid">
+      <div class="field"><label>Número do touro</label><input id="t_numero" type="number" placeholder="sugestão…"></div>
+      <div class="field"><label>Procedência</label><select id="t_proc"><option value="fazenda">Touro Fazenda</option><option value="central">Central</option></select></div>
+      <div class="field"><label>Registro / Central</label><input id="t_registro" placeholder="código de registro"></div>
+      <div class="field"><label>Data de nascimento</label><input id="t_nasc" type="date"></div>
+      <div class="field"><label>Raça</label><input id="t_raca" placeholder="Nelore, Angus…"></div>
+      <div class="field"><label>Classificação genética</label><input id="t_class" placeholder="ex: PO, elite"></div>
+      <div class="field"><label>Pai</label><input id="t_pai" placeholder="nome/nº do pai"></div>
+      <div class="field"><label>Mãe</label><input id="t_mae" placeholder="nome/nº da mãe"></div>
+      <div class="field"><label>Avô paterno</label><input id="t_avop"></div>
+      <div class="field"><label>Avó paterna</label><input id="t_avap"></div>
+      <div class="field"><label>Avô materno</label><input id="t_avom"></div>
+      <div class="field"><label>Avó materna</label><input id="t_avam"></div>
+      <div class="field"><label>Peso atual (kg)</label><input id="t_peso" type="number" step="0.1"></div>
+    </div>
+    ${formIndices({})}
+    <div class="field" style="margin-top:12px"><label>Observações</label><textarea id="t_obs" rows="2"></textarea></div>
+    <div class="actions"><button class="btn" onclick="salvarTouro()">Salvar touro</button></div>
+  </div>`;
+  sugestaoNumero("t_numero");
+}
+async function salvarTouro(){
+  const v=id=>document.getElementById(id).value.trim();
+  const rec={
+    tipo:"touro",
+    numero: v("t_numero")? parseInt(v("t_numero")):null,
+    procedencia: v("t_proc"),
+    registro: v("t_registro")||null,
+    data_nascimento: v("t_nasc")||null,
+    raca: v("t_raca")||null,
+    classificacao_genetica: v("t_class")||null,
+    pai_ref: v("t_pai")||null,
+    mae_ref: v("t_mae")||null,
+    avo_paterno: v("t_avop")||null, ava_paterna: v("t_avap")||null,
+    avo_materno: v("t_avom")||null, ava_materna: v("t_avam")||null,
+    peso: v("t_peso")? parseFloat(v("t_peso")):null,
+    indices: coletarIndices(),
+    observacoes: v("t_obs")||null,
+  };
+  if(!(await passouValidacao(rec, null, AUTOSAVE))) return;
+  const { error } = await sb.from("animais").insert(rec);
+  if(error) return erroInsert(error, rec.numero);
+  toast("Touro cadastrado!","ok"); renderCadastro();
+}
+
+function formFemea(){
+  $("#cad-form").innerHTML = `
+  <div class="card">
+    <h3>Cadastro de Fêmea</h3>
+    <p class="muted">Informe o nº da mãe (matriz) para vincular a genealogia — o pai é preenchido a partir da prenhez confirmada da mãe (IATF ou touro).</p>
+    <div class="grid">
+      <div class="field"><label>Número</label><input id="f_numero" type="number" placeholder="sugestão…"></div>
+      <div class="field"><label>Data de nascimento</label><input id="f_nasc" type="date"></div>
+      <div class="field"><label>Nº da mãe (matriz)</label><input id="f_mae" type="number" placeholder="opcional"></div>
+      <div class="field"><label>Raça</label><input id="f_raca" placeholder="Nelore…"></div>
+      <div class="field"><label>Classificação genética</label><input id="f_class"></div>
+      <div class="field"><label>Registro</label><input id="f_registro"></div>
+      <div class="field"><label>Peso (kg)</label><input id="f_peso" type="number" step="0.1"></div>
+    </div>
+    <p class="muted" style="margin-top:8px">A categoria (bezerra / novilha / vaca) é definida automaticamente pela idade.</p>
+    <div class="field" style="margin-top:12px"><label>Observações</label><textarea id="f_obs" rows="2"></textarea></div>
+    <div class="actions"><button class="btn" onclick="salvarFemea()">Salvar fêmea</button></div>
+  </div>`;
+  sugestaoNumero("f_numero");
+}
+async function resolverGenealogia(maeNum){
+  // retorna {mae_id, pai_id, pai_ref} a partir do nº da mãe
+  const res={mae_id:null,pai_id:null,pai_ref:null};
+  if(!maeNum) return res;
+  const { data:mae } = await sb.from("animais").select("id").eq("numero",parseInt(maeNum)).eq("arquivado",false).maybeSingle();
+  if(!mae) return res;
+  res.mae_id=mae.id;
+  // última prenhez confirmada da mãe
+  const { data:rep } = await sb.from("reproducao").select("id").eq("animal_id",mae.id).eq("resultado_prenhez",true).order("ciclo",{ascending:false}).limit(1).maybeSingle();
+  if(rep){
+    const { data:t } = await sb.from("reproducao_touros").select("touro_id,touro_nome").eq("reproducao_id",rep.id).limit(1).maybeSingle();
+    if(t){ res.pai_id=t.touro_id||null; res.pai_ref=t.touro_nome||null; }
+  }
+  return res;
+}
+async function salvarFemea(){
+  const v=id=>document.getElementById(id).value.trim();
+  const gen=await resolverGenealogia(v("f_mae"));
+  const rec={
+    tipo:"femea",
+    numero: v("f_numero")? parseInt(v("f_numero")):null,
+    data_nascimento: v("f_nasc")||null,
+    mae_id: gen.mae_id, mae_ref: (!gen.mae_id && v("f_mae"))? v("f_mae"):null,
+    pai_id: gen.pai_id, pai_ref: gen.pai_ref,
+    raca: v("f_raca")||null,
+    classificacao_genetica: v("f_class")||null,
+    registro: v("f_registro")||null,
+    peso: v("f_peso")? parseFloat(v("f_peso")):null,
+    observacoes: v("f_obs")||null,
+  };
+  if(!(await passouValidacao(rec, null, AUTOSAVE))) return;
+  const { error } = await sb.from("animais").insert(rec);
+  if(error) return erroInsert(error, rec.numero);
+  toast(gen.mae_id?"Fêmea cadastrada (genealogia vinculada)":"Fêmea cadastrada!","ok"); renderCadastro();
+}
+
+function formMacho(){
+  $("#cad-form").innerHTML = `
+  <div class="card">
+    <h3>Cadastro de Macho</h3>
+    <p class="muted">Se a mãe estiver no banco (nº informado), pai e mãe são trazidos automaticamente.</p>
+    <div class="grid">
+      <div class="field"><label>Número</label><input id="m_numero" type="number" placeholder="sugestão…"></div>
+      <div class="field"><label>Origem</label><select id="m_origem" onchange="toggleCompra()"><option value="nascimento">Nascimento</option><option value="compra">Compra</option></select></div>
+      <div class="field"><label>Data de nascimento</label><input id="m_nasc" type="date"></div>
+      <div class="field" id="m_compra_wrap" style="display:none"><label>Data da compra</label><input id="m_compra" type="date"></div>
+      <div class="field"><label>Nº da mãe</label><input id="m_mae" type="number" placeholder="opcional"></div>
+      <div class="field"><label>Raça</label><input id="m_raca"></div>
+      <div class="field"><label>Registro</label><input id="m_registro"></div>
+      <div class="field"><label>Classificação genética</label><input id="m_class"></div>
+      <div class="field"><label>Peso nascimento (kg)</label><input id="m_pnasc" type="number" step="0.1"></div>
+      <div class="field"><label>Peso desmame (kg)</label><input id="m_desm" type="number" step="0.1"></div>
+      <div class="field"><label>Peso atual (kg)</label><input id="m_peso" type="number" step="0.1"></div>
+    </div>
+    <p class="muted" style="margin-top:8px">A categoria (bezerro / garrote / boi) é definida automaticamente pela idade.</p>
+    <div class="field" style="margin-top:12px"><label>Observações</label><textarea id="m_obs" rows="2"></textarea></div>
+    <div class="actions"><button class="btn" onclick="salvarMacho()">Salvar macho</button></div>
+  </div>`;
+  sugestaoNumero("m_numero");
+}
+function toggleCompra(){
+  const o=document.getElementById("m_origem").value;
+  document.getElementById("m_compra_wrap").style.display = o==="compra"?"flex":"none";
+}
+async function salvarMacho(){
+  const v=id=>document.getElementById(id).value.trim();
+  const gen=await resolverGenealogia(v("m_mae"));
+  const rec={
+    tipo:"macho",
+    numero: v("m_numero")? parseInt(v("m_numero")):null,
+    origem: v("m_origem"),
+    data_nascimento: v("m_nasc")||null,
+    data_compra: v("m_compra")||null,
+    mae_id: gen.mae_id, mae_ref: (!gen.mae_id && v("m_mae"))? v("m_mae"):null,
+    pai_id: gen.pai_id, pai_ref: gen.pai_ref,
+    raca: v("m_raca")||null,
+    registro: v("m_registro")||null,
+    classificacao_genetica: v("m_class")||null,
+    peso_nascimento: v("m_pnasc")? parseFloat(v("m_pnasc")):null,
+    peso_desmame: v("m_desm")? parseFloat(v("m_desm")):null,
+    peso: v("m_peso")? parseFloat(v("m_peso")):null,
+    observacoes: v("m_obs")||null,
+  };
+  if(!(await passouValidacao(rec, null, AUTOSAVE))) return;
+  const { error } = await sb.from("animais").insert(rec);
+  if(error) return erroInsert(error, rec.numero);
+  toast("Macho cadastrado!","ok"); renderCadastro();
+}
+
+async function listaAnimais(tipo){
+  const el=$("#cad-list");
+  el.innerHTML=`<div class="card"><div class="empty">Carregando…</div></div>`;
+  const { data, error } = await sb.from("animais").select("*").eq("tipo",tipo).eq("arquivado",false).order("numero",{ascending:true,nullsFirst:false});
+  if(error){ el.innerHTML=`<div class="card"><div class="empty">Erro: ${esc(error.message)}</div></div>`; return; }
+  const rotulo={touro:"Touros",femea:"Fêmeas",macho:"Machos"}[tipo];
+  if(!data.length){ el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados</h3><div class="empty">Nenhum ${tipo} cadastrado ainda.</div></div>`; return; }
+  let rows = data.map(a=>`
+    <tr>
+      <td data-label="Nº"><a class="lnk" onclick="abrirFicha('${a.id}')">${a.numero??"—"}</a></td>
+      <td data-label="Raça">${esc(a.raca)||"—"}</td>
+      <td data-label="Nascimento">${fmtDate(a.data_nascimento)}</td>
+      <td data-label="Idade">${idadeTxt(a.data_nascimento)}</td>
+      ${tipo==="touro"?`<td data-label="Procedência">${a.procedencia==="central"?"Central":"Fazenda"}</td>`:`<td data-label="Categoria"><span class="tag ${a.tipo}">${esc(categoriaAnimal(a))||"—"}</span></td>`}
+      <td data-label="Class. genética">${esc(a.classificacao_genetica)||"—"}</td>
+      <td><div class="cellbtns">
+        <button class="btn ghost sm" onclick="abrirFicha('${a.id}')">Ficha</button>
+        <button class="btn gold sm" onclick="editarAnimal('${a.id}')">Editar</button>
+        <button class="btn danger sm" onclick="arquivar('${a.id}',${a.numero})">Vender</button>
+      </div></td>
+    </tr>`).join("");
+  el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados (${data.length})</h3>
+    <div style="overflow-x:auto"><table class="rt"><thead><tr>
+      <th>Nº</th><th>Raça</th><th>Nascimento</th><th>Idade</th>
+      ${tipo==="touro"?"<th>Procedência</th>":"<th>Categoria</th>"}
+      <th>Class. genética</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+async function arquivar(id,numero){
+  if(!confirm(`Arquivar o animal nº ${numero}? Ele receberá o código interno A${numero} (arquivo morto) e o número ${numero} voltará a ficar disponível.`)) return;
+  const { error } = await sb.rpc("arquivar_animal",{ p_id:id, p_status:"vendido" });
+  if(error) return toast("Erro: "+error.message,"err");
+  toast(`Animal arquivado como A${numero}. Número ${numero} liberado.`,"ok");
+  render();
+}
+
+// --------- REGISTROS ---------
+async function renderRegistros(){
+  const body=$("#rebanho-body");
+  body.innerHTML=`<div class="card"><div class="empty">Carregando registros…</div></div>`;
+  const { data } = await sb.from("animais").select("*").eq("arquivado",false).order("numero",{ascending:true,nullsFirst:false});
+  const rows=(data||[]).map(a=>`
+    <tr>
+      <td data-label="Nº"><a class="lnk" onclick="abrirFicha('${a.id}')">${a.numero??"—"}</a></td>
+      <td data-label="Tipo"><span class="tag ${a.tipo}">${a.tipo}</span></td>
+      <td data-label="Origem">${a.origem==="compra"?"Compra":"Nascimento"}</td>
+      <td data-label="Data">${a.origem==="compra"?fmtDate(a.data_compra):fmtDate(a.data_nascimento)}</td>
+      <td data-label="P. desmame">${a.peso_desmame??"—"}</td>
+      <td data-label="Pai">${esc(pai(a))}</td>
+      <td data-label="Mãe">${esc(maeTxt(a))}</td>
+    </tr>`).join("");
+  body.innerHTML=`
+    <div class="card">
+      <h3>Registros — Nascimento / Compra / Desmame</h3>
+      <p class="muted">Machos e touros: dados de nascimento (ou data de compra) e peso de desmame. Numeração sequencial única para todos os animais.</p>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr>
+        <th>Nº</th><th>Tipo</th><th>Origem</th><th>Data</th><th>P. desmame</th><th>Pai</th><th>Mãe</th>
+      </tr></thead><tbody>${rows||`<tr><td colspan="7" class="empty">Sem registros.</td></tr>`}</tbody></table></div>
+    </div>`;
+}
+function pai(a){ return a.pai_ref || (a.pai_id?"(cadastrado)":"—"); }
+function maeTxt(a){ return a.mae_ref || (a.mae_id?"(cadastrada)":"—"); }
+
+// --------- NÚMEROS DISPONÍVEIS ---------
+async function renderNumeros(){
+  const body=$("#rebanho-body");
+  body.innerHTML=`<div class="card"><div class="empty">Buscando números disponíveis…</div></div>`;
+  const { data, error } = await sb.rpc("numeros_disponiveis",{ p_limite:40 });
+  if(error){ body.innerHTML=`<div class="card"><div class="empty">Erro: ${esc(error.message)}</div></div>`; return; }
+  const chips=(data||[]).map((r,i)=>`<span class="numchip ${i===0?'first':''}">${r.numero}</span>`).join("");
+  body.innerHTML=`
+    <div class="card">
+      <h3>Números disponíveis</h3>
+      <p class="muted">Em ordem crescente. O primeiro (destacado) é a sugestão para o próximo cadastro. Quando um animal sai da fazenda, seu número volta a esta lista.</p>
+      <div class="numchips">${chips||'<div class="empty">Nenhum número livre.</div>'}</div>
+    </div>`;
+}
+
+// ============================================================
+// OPERACIONAL — Manejo e Reprodução
+// ============================================================
+function renderOperacional(){
+  app.innerHTML = subnav([{id:"manejo",label:"Manejo do Rebanho"}],"operacional","manejo")
+    + `<div class="card">
+        <h3>Manejo do Rebanho</h3>
+        <p class="muted">Digite o código (número) do animal e busque. Peso/sanidade e (para fêmeas) reprodução aparecem juntos na mesma tela.</p>
+        <div class="actions">
+          <div class="field" style="max-width:180px"><label>Código do animal</label><input id="op_cod" type="number" placeholder="ex: 1"></div>
+          <button class="btn" onclick="buscarAnimalOp()" style="align-self:flex-end">Buscar</button>
+        </div>
+      </div>
+      <div id="op-body"></div>`;
+  bindSub();
+}
+let animalOp=null;
+async function buscarAnimalOp(){
+  const cod=$("#op_cod").value.trim();
+  const box=$("#op-body");
+  if(!cod){ box.innerHTML=""; return; }
+  const { data } = await sb.from("animais").select("*").eq("numero",parseInt(cod)).eq("arquivado",false).maybeSingle();
+  if(!data){ box.innerHTML=`<div class="card"><div class="empty">Nenhum animal ativo com o número ${esc(cod)}.</div></div>`; return; }
+  animalOp=data;
+  if(data.tipo==="femea") return opFemea(data);
+  return opMachoTouro(data);
+}
+
+function blocoManejo(a){
+  return `<div class="card">
+      <h3>Registrar peso e sanidade</h3>
+      <p class="muted">Pesagem e sanidade do animal nº ${a.numero}.</p>
+      <div class="grid">
+        <div class="field"><label>Data</label><input id="mo_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Peso (kg)</label><input id="mo_peso" type="number" step="0.1" placeholder="ex: 320"></div>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" id="mo_verm"> Vermífugo</label>
+        <label><input type="checkbox" id="mo_carb"> Carbúnculo</label>
+        <label><input type="checkbox" id="mo_repro"> Vacina reprodutiva</label>
+      </div>
+      <div class="field" style="margin-top:12px"><label>Outros medicamentos / observações</label><input id="mo_out"></div>
+      <div class="actions"><button class="btn" onclick="salvarManejo('${a.id}')">Registrar peso/manejo</button></div>
+      <div class="divider"></div>
+      <div id="hist-manejo"></div>
+    </div>`;
+}
+function opMachoTouro(a){
+  $("#op-body").innerHTML=`
+    <div class="card">
+      <h3>Animal nº ${a.numero} — <span class="tag ${a.tipo}">${a.tipo}</span></h3>
+      <p class="muted">${esc(a.raca)||""} ${a.data_nascimento?("· "+idadeTxt(a.data_nascimento)):""}</p>
+    </div>`+blocoManejo(a);
+  histManejo(a.id);
+}
+async function salvarManejo(animalId){
+  const v=id=>document.getElementById(id);
+  const rec={
+    animal_id:animalId,
+    data:v("mo_data").value||null,
+    peso:v("mo_peso").value?parseFloat(v("mo_peso").value):null,
+    vermifugo:v("mo_verm").checked, carbunculo:v("mo_carb").checked,
+    vacina_reprodutiva:v("mo_repro").checked,
+    outros_medicamentos:v("mo_out").value.trim()||null,
+  };
+  const { error } = await sb.from("operacoes_rebanho").insert(rec);
+  if(error) return toast("Erro: "+error.message,"err");
+  toast("Manejo registrado!","ok"); buscarAnimalOp();
+}
+async function histManejo(animalId){
+  const { data } = await sb.from("operacoes_rebanho").select("*").eq("animal_id",animalId).order("data",{ascending:false}).limit(8);
+  const el=$("#hist-manejo");
+  if(!data||!data.length){ el.innerHTML=`<p class="muted">Sem manejos registrados.</p>`; return; }
+  el.innerHTML=`<h3>Histórico de manejo</h3><ul class="inline-list">`+data.map(o=>{
+    const meds=[o.vermifugo?"Vermífugo":null,o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
+    return `<li><span>${fmtDate(o.data)} · ${o.peso?o.peso+" kg":"sem peso"}</span><span>${esc(meds)||"—"}</span></li>`;
+  }).join("")+`</ul>`;
+}
+
+// --------- REPRODUÇÃO (FÊMEA) ---------
+function tipoCob(t){ return t==="iatf"?"IATF":t==="touro"?"Touro (equipe)":"—"; }
+async function listaTourosOptions(){
+  const { data:touros } = await sb.from("animais").select("id,numero,raca").eq("tipo","touro").eq("arquivado",false).order("numero");
+  return (touros||[]).map(t=>`<option value="${t.id}">${t.numero} — ${esc(t.raca)||"touro"}</option>`).join("") || '<option value="">nenhum touro cadastrado</option>';
+}
+function listaEquipesOptions(){
+  return (LOCAL.equipes||[]).map(e=>`<option value="${e.id}">${esc(e.nome)}${e.touros?(" — "+esc(e.touros)):""}</option>`).join("") || '<option value="">nenhuma equipe cadastrada</option>';
+}
+function coberturaTxt(c){
+  if(c.tipo==="iatf") return c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF";
+  if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
+  return "—";
+}
+async function opFemea(a){
+  const box=$("#op-body");
+  box.innerHTML=`<div class="card"><div class="empty">Carregando reprodução…</div></div>`;
+  const { data:ciclos } = await sb.from("reproducao").select("*").eq("animal_id",a.id).order("ciclo",{ascending:false});
+  const cs = ciclos||[];
+  const aguardando = cs.find(c=>c.fase==="aguardando");
+  const ultimo = cs[0]||null;
+  let flow="";
+  if(aguardando) flow=flowDiagnostico(a,aguardando);
+  else flow=await flowNovaReproducao(a,(ultimo?ultimo.ciclo:0)+1,ultimo);
+  const stat=situacaoFemea(cs);
+  box.innerHTML=`
+    <div class="card">
+      <h3>Fêmea nº ${a.numero} <span class="tag femea">${esc(categoriaAnimal(a))||"fêmea"}</span> ${stat.tag}</h3>
+      <p class="muted">${esc(a.raca)||""} ${a.data_nascimento?("· "+idadeTxt(a.data_nascimento)):""} · Registros: ${cs.length}</p>
+    </div>`
+    + blocoManejo(a)
+    + `<div class="card">
+      <h3>Reprodução</h3>
+      ${flow}
+      <div class="divider"></div>
+      ${histReproducao(cs)}
+    </div>`;
+  histManejo(a.id);
+}
+function situacaoFemea(ciclos){
+  const conf=ciclos.filter(c=>c.resultado_prenhez!==null).length;
+  const u=ciclos[0];
+  let tag=`<span class="tag proc">sem registro</span>`;
+  if(u){
+    if(u.fase==="prenhe") tag=`<span class="tag prenhe">prenhe (gestante)</span>`;
+    else if(u.fase==="parida") tag=`<span class="tag proc">parida</span>`;
+    else if(u.fase==="vazia") tag=`<span class="tag vazia">vazia</span>`;
+    else if(u.fase==="aguardando") tag=`<span class="tag proc">aguardando diagnóstico</span>`;
+  }
+  return {confirmados:conf, tag};
+}
+async function flowNovaReproducao(a,prox,ultimo){
+  const opts=await listaTourosOptions();
+  const eqs=listaEquipesOptions();
+  const vazia = ultimo && ultimo.fase==="vazia";
+  const aviso = !ultimo ? `<p class="muted">Primeiro registro de reprodução desta fêmea. No curral ela pode já estar prenha por uma equipe de touro.</p>`
+    : (ultimo.fase==="prenhe") ? `<p class="muted">Fêmea atualmente prenhe. Registre nova cobertura apenas no próximo ciclo (após a cria).</p>`
+    : vazia ? `<p class="muted">Fêmea vazia — registre nova cobertura ou envie para descarte.</p>` : "";
+  const descarte = vazia ? `<button class="btn danger" onclick="descartarAnimal('${a.id}',${a.numero})">Descarte (abate)</button>` : "";
+  return `<div class="flowbox">
+    <b>Registrar reprodução (nº ${prox})</b>
+    ${aviso}
+    <div class="grid" style="margin-top:10px">
+      <div class="field"><label>Cobertura por</label><select id="rp_tipo" onchange="toggleTipoCob()">
+        <option value="touro">Touro (equipe)</option>
+        <option value="iatf">IATF</option></select></div>
+      <div class="field"><label id="rp_data_lbl">Data / período da monta</label><input id="rp_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
+    <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select>
+      <input id="rp_tnome" style="margin-top:6px" placeholder="ou nome/código do sêmen (central)"></div>
+    <div class="grid" style="margin-top:8px">
+      <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()">
+        <option value="prenhe">Prenhe</option>
+        <option value="vazia">Vazia</option>
+        <option value="aguardando">Aguardando diagnóstico</option></select></div>
+      <div class="field" id="rp_ddiag_wrap"><label>Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="checks" style="margin-top:8px">
+      <label><input type="checkbox" id="rp_repro"> Vacina reprodutiva</label>
+      <label><input type="checkbox" id="rp_verm"> Vermífugo</label>
+      <label><input type="checkbox" id="rp_carb"> Carbúnculo</label>
+    </div>
+    <div class="field" style="margin-top:10px"><label>Outros medicamentos</label><input id="rp_out"></div>
+    <div class="actions">
+      <button class="btn gold" onclick="salvarReproducao('${a.id}',${prox})">Salvar reprodução</button>
+      ${descarte}
+    </div>
+  </div>`;
+}
+function toggleTipoCob(){
+  const t=document.getElementById("rp_tipo").value;
+  document.getElementById("rp_equipe_wrap").style.display = t==="touro"?"flex":"none";
+  document.getElementById("rp_touro_wrap").style.display = t==="iatf"?"flex":"none";
+  document.getElementById("rp_data_lbl").textContent = t==="iatf"?"Data da IATF":"Data / período da monta";
+}
+function toggleDiag(){
+  const dg=document.getElementById("rp_diag").value;
+  document.getElementById("rp_ddiag_wrap").style.display = dg==="aguardando"?"none":"flex";
+}
+async function salvarReproducao(animalId,ciclo){
+  const v=id=>document.getElementById(id);
+  const tipo=v("rp_tipo").value, dg=v("rp_diag").value;
+  const rec={ animal_id:animalId, ciclo, tipo,
+    data_cobertura:v("rp_data").value||null,
+    vacina_reprodutiva:v("rp_repro").checked, vermifugo:v("rp_verm").checked, carbunculo:v("rp_carb").checked,
+    outros_medicamentos:v("rp_out").value.trim()||null,
+    fase: dg,
+    resultado_prenhez: dg==="prenhe"?true: dg==="vazia"?false:null,
+    data_diagnostico: dg!=="aguardando"? (v("rp_ddiag").value||null) : null };
+  let sireId=null, sireNome=null;
+  if(tipo==="touro"){
+    const eq=(LOCAL.equipes||[]).find(e=>e.id===v("rp_equipe").value);
+    rec.equipe_id=v("rp_equipe").value||null; rec.equipe_nome=eq?eq.nome:null;
+    sireNome = eq? ("Equipe "+eq.nome) : "Equipe";
+  } else {
+    sireId=v("rp_touro").value||null;
+    const nm=v("rp_tnome")?v("rp_tnome").value.trim():"";
+    rec.touro_id=sireId; rec.touro_nome=nm||null; sireNome=nm||null;
+  }
+  const { data:novo, error } = await sb.from("reproducao").insert(rec);
+  if(error) return toast("Erro: "+error.message,"err");
+  const repId=novo[0].id;
+  if(sireId) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_id:sireId});
+  else if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
+  toast(dg==="prenhe"?"Prenhez registrada!": dg==="vazia"?"Registrada como vazia.":"Cobertura registrada. Aguardando diagnóstico.", dg==="vazia"?"":"ok");
+  buscarAnimalOp();
+}
+function flowDiagnostico(a,c){
+  return `<div class="flowbox">
+    <b>Registro nº ${c.ciclo} — ${tipoCob(c.tipo)} · <span class="tag proc">aguardando diagnóstico</span></b>
+    <div class="muted" style="margin-top:6px">Cobertura: ${coberturaTxt(c)} · ${fmtDate(c.data_cobertura)}</div>
+    <div class="grid" style="margin-top:10px">
+      <div class="field"><label>Data do diagnóstico</label><input id="rp_ddiag2" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="registrarDiagnostico('${c.id}',true)">Confirmar PRENHEZ</button>
+      <button class="btn danger" onclick="registrarDiagnostico('${c.id}',false)">Marcar VAZIA</button>
+    </div>
+  </div>`;
+}
+async function registrarDiagnostico(repId,prenhe){
+  const d=document.getElementById("rp_ddiag2");
+  const rec={ resultado_prenhez:prenhe, fase: prenhe?"prenhe":"vazia" };
+  if(d&&d.value) rec.data_diagnostico=d.value;
+  const { error } = await sb.from("reproducao").update(rec).eq("id",repId);
+  if(error) return toast("Erro: "+error.message,"err");
+  toast(prenhe?"Prenhez confirmada!":"Registrada como vazia.", prenhe?"ok":"");
+  buscarAnimalOp();
+}
+async function descartarAnimal(animalId,numero){
+  if(!confirm(`Enviar a fêmea nº ${numero} para DESCARTE (abate)? Ela será arquivada e o número ${numero} voltará a ficar disponível.`)) return;
+  const { error } = await sb.rpc("arquivar_animal",{ p_id:animalId, p_status:"descarte" });
+  if(error) return toast("Erro: "+error.message,"err");
+  toast(`Fêmea nº ${numero} enviada para descarte (arquivada).`,"ok"); render();
+}
+function histReproducao(ciclos){
+  if(!ciclos.length) return `<p class="muted">Sem registros de reprodução.</p>`;
+  const resTag=c=>{
+    if(c.fase==="aguardando") return `<span class="tag proc">AGUARDANDO</span>`;
+    if(c.resultado_prenhez===true) return `<span class="tag prenhe">PRENHE</span>`;
+    if(c.resultado_prenhez===false) return `<span class="tag vazia">VAZIA</span>`;
+    if(c.fase==="parida") return `<span class="tag proc">PARIDA</span>`;
+    return `<span class="tag proc">${(c.fase||"—").toUpperCase()}</span>`;
+  };
+  const rows=ciclos.map(c=>`<tr>
+    <td data-label="Nº">${c.ciclo}</td>
+    <td data-label="Tipo">${tipoCob(c.tipo)}</td>
+    <td data-label="Cobertura">${coberturaTxt(c)}</td>
+    <td data-label="Data cob.">${fmtDate(c.data_cobertura)}</td>
+    <td data-label="Diagnóstico">${fmtDate(c.data_diagnostico)}</td>
+    <td data-label="Resultado">${resTag(c)}</td>
+  </tr>`).join("");
+  return `<h3>Histórico reprodutivo</h3><div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Cobertura</th><th>Data cob.</th><th>Diagnóstico</th><th>Resultado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ============================================================
+// RELATÓRIOS
+// ============================================================
+function renderRelatorios(){
+  const sub = state.sub.relatorios || "geral";
+  app.innerHTML = subnav([
+    {id:"geral",label:"Relatório geral de animais"},
+    {id:"ultimos",label:"Últimos registros"},
+  ],"relatorios","geral")
+    + `<div id="rel-body"><div class="card"><div class="empty">Carregando…</div></div></div>`;
+  bindSub();
+  if(sub==="ultimos") renderUltimosRegistros(); else gerarRelatorio();
+}
+function fmtDateTime(iso){ if(!iso) return "—"; const d=new Date(iso); if(isNaN(d.getTime())) return "—"; const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function ordemDe(r){ const n=parseInt(String(r.id||"").replace(/\D/g,"")); return isNaN(n)?0:n; }
+function nomeAnimalRef(animalId){ const a=LOCAL.animais.find(x=>x.id===animalId); return a? ("nº "+(a.numero??a.codigo_arquivo??"?")) : "animal"; }
+function renderUltimosRegistros(){
+  const feed=[];
+  LOCAL.animais.forEach(a=>feed.push({o:ordemDe(a),cat:"Animal",desc:`${(nomeTipo[a.tipo]||a.tipo)} ${a.numero!=null?("nº "+a.numero):(a.codigo_arquivo||"")}${a.raca?(" · "+a.raca):""}`,data:a.created_at}));
+  LOCAL.operacoes_rebanho.forEach(o=>feed.push({o:ordemDe(o),cat:"Peso / Manejo",desc:`${nomeAnimalRef(o.animal_id)} · ${o.peso?o.peso+" kg":"sem peso"}${o.data?(" · "+fmtDate(o.data)):""}`,data:o.created_at||o.data}));
+  LOCAL.reproducao.forEach(r=>feed.push({o:ordemDe(r),cat:"Reprodução",desc:`${nomeAnimalRef(r.animal_id)} · ciclo ${r.ciclo} · ${r.fase}${r.resultado_prenhez===true?" (prenhe)":r.resultado_prenhez===false?" (vazia)":""}`,data:r.created_at}));
+  LOCAL.pastos.forEach(p=>feed.push({o:ordemDe(p),cat:"Pasto",desc:p.nome,data:p.created_at}));
+  LOCAL.lotes.forEach(p=>feed.push({o:ordemDe(p),cat:"Lote",desc:p.nome,data:p.created_at}));
+  LOCAL.medicamentos.forEach(p=>feed.push({o:ordemDe(p),cat:"Medic./Vacina",desc:p.nome,data:p.created_at}));
+  LOCAL.protocolos.forEach(p=>feed.push({o:ordemDe(p),cat:"Protocolo",desc:p.nome,data:p.created_at}));
+  feed.sort((a,b)=>String(b.data||"").localeCompare(String(a.data||"")));
+  const top=feed.slice(0,500);
+  const body=$("#rel-body");
+  if(!top.length){ body.innerHTML=`<div class="card"><div class="empty">Nenhum registro ainda.</div></div>`; return; }
+  const rows=top.map(f=>`<tr><td data-label="Quando">${fmtDateTime(f.data)}</td><td data-label="Tipo"><span class="tag proc">${esc(f.cat)}</span></td><td data-label="Descrição">${esc(f.desc)}</td></tr>`).join("");
+  body.innerHTML=`<div class="card">
+    <h3>Últimos registros</h3>
+    <p class="muted">Histórico das ${top.length} atividades mais recentes (limite de 500): cadastros, pesagens, manejos e reprodução.</p>
+    <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Quando</th><th>Tipo</th><th>Descrição</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+async function gerarRelatorio(){
+  const body=$("#rel-body");
+  const [ct, fx, rr, ci] = await Promise.all([
+    sb.from("vw_contagem_tipo").select("*"),
+    sb.from("vw_faixa_etaria").select("*"),
+    sb.from("vw_resumo_reproducao").select("*").maybeSingle(),
+    sb.from("vw_femea_reproducao").select("*").gte("total_ciclos",2),
+  ]);
+  const cont={femea:0,macho:0,touro:0};
+  (ct.data||[]).forEach(r=>cont[r.tipo]=r.total);
+  const total=cont.femea+cont.macho+cont.touro;
+
+  // categorias por idade
+  const cat={bezerra:0,novilha:0,vaca:0,bezerro:0,garrote:0,boi:0};
+  LOCAL.animais.filter(a=>!a.arquivado).forEach(a=>{ const c=categoriaAnimal(a); if(cat[c]!==undefined) cat[c]++; });
+
+  // faixas
+  const faixas={}; ["femea","macho","touro"].forEach(t=>faixas[t]={"0-12":0,"13-24":0,"25+":0,"sem_data":0});
+  (fx.data||[]).forEach(r=>{ if(faixas[r.tipo]) faixas[r.tipo][r.faixa]=r.total; });
+  const linhaFx=t=>`<tr><td><span class="tag ${t}">${t}</span></td><td>${faixas[t]["0-12"]}</td><td>${faixas[t]["13-24"]}</td><td>${faixas[t]["25+"]}</td><td>${faixas[t]["sem_data"]}</td><td><b>${cont[t]}</b></td></tr>`;
+
+  const rp=rr.data||{total_femeas:0,prenhes:0,vazias:0,paridas:0,em_processo:0,sem_registro:0,com_2_ou_mais_ciclos:0};
+  const basePr=rp.prenhes+rp.vazias;
+  const pctPr=basePr?Math.round(rp.prenhes/basePr*100):0;
+  const pctVz=basePr?100-pctPr:0;
+  const pctProc = rp.total_femeas? Math.round(rp.em_processo/rp.total_femeas*100):0;
+
+  body.innerHTML=`
+    <div class="card">
+      <h3>Rebanho — visão geral</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${total}</div><div class="l">Total ativos</div></div>
+        <div class="kpi"><div class="n">${cont.femea}</div><div class="l">Fêmeas</div></div>
+        <div class="kpi"><div class="n">${cont.macho}</div><div class="l">Machos</div></div>
+        <div class="kpi gold"><div class="n">${cont.touro}</div><div class="l">Touros</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Categorias do rebanho (por idade)</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${cat.bezerra}</div><div class="l">Bezerras</div></div>
+        <div class="kpi"><div class="n">${cat.novilha}</div><div class="l">Novilhas</div></div>
+        <div class="kpi"><div class="n">${cat.vaca}</div><div class="l">Vacas</div></div>
+      </div>
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi"><div class="n">${cat.bezerro}</div><div class="l">Bezerros</div></div>
+        <div class="kpi"><div class="n">${cat.garrote}</div><div class="l">Garrotes</div></div>
+        <div class="kpi"><div class="n">${cat.boi}</div><div class="l">Bois</div></div>
+      </div>
+      <p class="muted" style="margin-top:14px">
+        <b>Como a categoria é definida (pela idade):</b><br>
+        • Fêmeas — até 12 meses: <b>bezerra</b> · 13 a 24 meses: <b>novilha</b> · 25 meses ou mais: <b>vaca</b>.<br>
+        • Machos — até 12 meses: <b>bezerro</b> · 13 a 20 meses: <b>garrote</b> · 21 meses ou mais: <b>boi</b>.<br>
+        • Touros não entram nesta classificação.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>Faixa etária (distribuição por idade)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Tipo</th><th>0–12 meses</th><th>13–24 meses</th><th>25+ meses</th><th>Sem data</th><th>Total</th></tr></thead>
+      <tbody>${linhaFx("femea")}${linhaFx("macho")}${linhaFx("touro")}</tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h3>Reprodução das fêmeas</h3>
+      <div class="kpis" style="margin-bottom:14px">
+        <div class="kpi"><div class="n" style="color:var(--ok)">${rp.prenhes}</div><div class="l">Prenhes (gestantes)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${rp.vazias}</div><div class="l">Vazias</div></div>
+        <div class="kpi"><div class="n" style="color:var(--verde2)">${rp.paridas}</div><div class="l">Paridas</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${rp.em_processo}</div><div class="l">Em processo</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${rp.sem_registro}</div><div class="l">Sem registro</div></div>
+      </div>
+      <div class="muted">Comparativo prenhes × vazias (sobre ${basePr} fêmeas diagnosticadas)</div>
+      <div class="bar">
+        ${pctPr?`<div class="seg pr" style="width:${pctPr}%">${pctPr}%</div>`:""}
+        ${pctVz?`<div class="seg vz" style="width:${pctVz}%">${pctVz}%</div>`:""}
+        ${!basePr?`<div class="seg" style="width:100%;background:#ccc;color:#555">sem diagnósticos</div>`:""}
+      </div>
+      <div style="margin-top:16px" class="kpis">
+        <div class="kpi"><div class="n">${rp.com_2_ou_mais_ciclos}</div><div class="l">Fêmeas com 2+ ciclos de reprodução</div></div>
+        <div class="kpi"><div class="n">${pctProc}%</div><div class="l">Fêmeas em processo</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Fêmeas com 2 ou mais ciclos</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Nº</th><th>Categoria</th><th>Total ciclos</th><th>Confirmados</th><th>Situação atual</th></tr></thead>
+      <tbody>${(ci.data||[]).length? (ci.data).map(f=>`<tr><td><b>${f.numero??"—"}</b></td><td>${esc(categoriaAnimal(LOCAL.animais.find(x=>x.id===f.animal_id)))||"—"}</td><td>${f.total_ciclos}</td><td>${f.ciclos_confirmados}</td><td>${f.situacao==="prenhe"?'<span class="tag prenhe">prenhe</span>':f.situacao==="vazia"?'<span class="tag vazia">vazia</span>':f.situacao==="parida"?'<span class="tag proc">parida</span>':'<span class="tag proc">'+esc(f.ultima_fase||'em processo')+'</span>'}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea com 2+ ciclos ainda.</td></tr>`}</tbody></table></div>
+    </div>`;
+}
+
+// ============================================================
+// VALIDAÇÕES E REGRAS
+// ============================================================
+async function checkNumeroLivre(numero, exceptId){
+  if(numero==null) return true;
+  let q = sb.from("animais").select("id").eq("numero",numero).eq("arquivado",false);
+  if(exceptId) q=q.neq("id",exceptId);
+  const { data } = await q.limit(1);
+  return !(data && data.length);
+}
+async function validarAnimal(rec, exceptId){
+  const errors=[], warnings=[];
+  const hoje=new Date().toISOString().slice(0,10);
+  // número obrigatório e único
+  if(rec.numero==null || isNaN(rec.numero)) errors.push("Informe o número do animal.");
+  else if(rec.numero<=0) errors.push("O número deve ser maior que zero.");
+  else if(!(await checkNumeroLivre(rec.numero, exceptId))) errors.push(`Número ${rec.numero} já está em uso por outro animal ativo.`);
+  // datas conforme origem
+  if(rec.tipo==="macho" && rec.origem==="compra"){
+    if(!rec.data_compra) errors.push("Informe a data da compra.");
+  } else if(!rec.data_nascimento){
+    warnings.push("Data de nascimento não informada (recomendada para calcular idade).");
+  }
+  // regras por tipo
+  if(rec.tipo==="touro" && !rec.procedencia) errors.push("Informe a procedência do touro.");
+  // datas no futuro
+  if(rec.data_nascimento && rec.data_nascimento>hoje) errors.push("Data de nascimento não pode ser no futuro.");
+  if(rec.data_compra && rec.data_compra>hoje) errors.push("Data de compra não pode ser no futuro.");
+  return {errors, warnings};
+}
+async function passouValidacao(rec, exceptId, silent){
+  const {errors,warnings}=await validarAnimal(rec, exceptId);
+  if(errors.length){ toast(errors[0], "err"); return false; }
+  if(warnings.length){
+    if(silent){ toast("Aviso: "+warnings[0]); }
+    else if(!confirm("Atenção:\n\n• "+warnings.join("\n• ")+"\n\nDeseja salvar mesmo assim?")) return false;
+  }
+  return true;
+}
+function erroInsert(error, numero){
+  return toast(error.code==="23505" ? `Número ${numero} já está em uso.` : "Erro: "+error.message, "err");
+}
+
+// ============================================================
+// MODAL / FICHA / EDIÇÃO
+// ============================================================
+let AUTOSAVE=true;
+function setAutosave(v){ AUTOSAVE=v; toast(v?"Auto-salvar ligado":"Auto-salvar desligado", v?"ok":""); }
+function abrirModal(html){ $("#modal").innerHTML=html; $("#modal-bg").classList.add("show"); }
+function fecharModal(){ $("#modal-bg").classList.remove("show"); }
+function fecharModalRender(){ fecharModal(); render(); }
+function fecharModalBg(e){ if(e.target.id==="modal-bg") fecharModalRender(); }
+function setEditStatus(txt, cls){ const el=document.getElementById("edit-status"); if(el){ el.textContent=txt; el.className="savest "+(cls||"idle"); } }
+const nomeTipo={touro:"Touro",femea:"Fêmea",macho:"Macho"};
+function it(k,v){ return `<div class="it"><span class="k">${k}</span><span class="val">${v??"—"}</span></div>`; }
+
+async function abrirFicha(id){
+  abrirModal(`<div class="modal-head"><b>Carregando ficha…</b><button class="x" onclick="fecharModal()">✕</button></div>`);
+  const { data:a } = await sb.from("animais").select("*").eq("id",id).maybeSingle();
+  if(!a){ toast("Animal não encontrado","err"); return fecharModal(); }
+  let maeTxtv=a.mae_ref, paiTxtv=a.pai_ref;
+  if(a.mae_id){ const {data:mm}=await sb.from("animais").select("numero,codigo_arquivo").eq("id",a.mae_id).maybeSingle(); if(mm) maeTxtv="nº "+(mm.numero??mm.codigo_arquivo); }
+  if(a.pai_id){ const {data:pp}=await sb.from("animais").select("numero,codigo_arquivo").eq("id",a.pai_id).maybeSingle(); if(pp) paiTxtv="nº "+(pp.numero??pp.codigo_arquivo); }
+  const { data:ops } = await sb.from("operacoes_rebanho").select("*").eq("animal_id",id).order("data",{ascending:false});
+  let repHtml="";
+  if(a.tipo==="femea"){ const {data:cic}=await sb.from("reproducao").select("*").eq("animal_id",id).order("ciclo",{ascending:false}); repHtml=`<h4>Reprodução</h4>${histReproducao(cic||[])}`; }
+
+  const dados=`<h4>Dados</h4><div class="dl">
+    ${it("Número",`<b>${a.numero??a.codigo_arquivo??"—"}</b>`)}
+    ${it("Tipo",`<span class="tag ${a.tipo}">${a.tipo}</span>`)}
+    ${a.tipo==="touro"?it("Procedência",a.procedencia==="central"?"Central":"Fazenda"):""}
+    ${a.tipo!=="touro"?it("Categoria",esc(categoriaAnimal(a))):""}
+    ${it("Raça",esc(a.raca))}
+    ${it("Nascimento",fmtDate(a.data_nascimento))}
+    ${it("Idade",idadeTxt(a.data_nascimento))}
+    ${a.origem==="compra"?it("Compra",fmtDate(a.data_compra)):it("Origem","Nascimento")}
+    ${it("Registro",esc(a.registro))}
+    ${it("Class. genética",esc(a.classificacao_genetica))}
+    ${a.stayability!=null?it("Stayability",a.stayability):""}
+    ${a.peso!=null?it("Peso atual",a.peso+" kg"):""}
+    ${a.peso_nascimento!=null?it("Peso nasc.",a.peso_nascimento+" kg"):""}
+    ${a.peso_desmame!=null?it("Peso desmame",a.peso_desmame+" kg"):""}
+    ${it("Data de inclusão", fmtDateTime(a.created_at))}
+  </div>${a.observacoes?`<p class="muted" style="margin-top:10px">📝 ${esc(a.observacoes)}</p>`:""}`;
+
+  const genealogia=`<h4>Genealogia</h4><div class="dl">
+    ${it("Pai",esc(paiTxtv))}
+    ${it("Mãe",esc(maeTxtv))}
+    ${a.tipo==="touro"?it("Avô paterno",esc(a.avo_paterno)):""}
+    ${a.tipo==="touro"?it("Avó paterna",esc(a.ava_paterna)):""}
+    ${a.tipo==="touro"?it("Avô materno",esc(a.avo_materno)):""}
+    ${a.tipo==="touro"?it("Avó materna",esc(a.ava_materna)):""}
+  </div>`;
+
+  let manejo=`<h4>Manejo e pesos</h4>`;
+  if(ops&&ops.length){
+    manejo+=`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Peso</th><th>Sanidade</th></tr></thead><tbody>`+
+      ops.map(o=>{const meds=[o.vermifugo?"Vermífugo":null,o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
+        return `<tr><td>${fmtDate(o.data)}</td><td>${o.peso?o.peso+" kg":"—"}</td><td>${esc(meds)||"—"}</td></tr>`;}).join("")+
+      `</tbody></table></div>`;
+  } else manejo+=`<p class="muted">Sem manejos registrados.</p>`;
+
+  abrirModal(`
+    <div class="modal-head"><b>${nomeTipo[a.tipo]} nº ${a.numero??a.codigo_arquivo??"—"}</b><button class="x" onclick="fecharModal()">✕</button></div>
+    <div class="modal-body">${dados}${genealogia}${a.tipo==="touro"?fichaIndices(a.indices):""}${manejo}${repHtml}</div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="fecharModalRender()">Fechar</button>
+      <button class="btn gold" onclick="editarAnimal('${a.id}')">Editar</button>
+    </div>`);
+}
+
+function campo(id,label,val,type="text",extra=""){
+  return `<div class="field"><label>${label}</label><input id="${id}" type="${type}" value="${val!=null?esc(val):""}" ${extra}></div>`;
+}
+async function editarAnimal(id){
+  const { data:a } = await sb.from("animais").select("*").eq("id",id).maybeSingle();
+  if(!a){ toast("Animal não encontrado","err"); return; }
+  // nº da mãe para reeditar (quando vinculada)
+  let maeNum=a.mae_ref||"";
+  if(a.mae_id){ const {data:mm}=await sb.from("animais").select("numero").eq("id",a.mae_id).maybeSingle(); if(mm&&mm.numero!=null) maeNum=mm.numero; }
+  let campos=campo("e_numero","Número",a.numero,"number")+campo("e_nasc","Data de nascimento",a.data_nascimento,"date");
+  if(a.tipo==="touro"){
+    campos+=`<div class="field"><label>Procedência</label><select id="e_proc"><option value="fazenda"${a.procedencia==="fazenda"?" selected":""}>Touro Fazenda</option><option value="central"${a.procedencia==="central"?" selected":""}>Central</option></select></div>`
+      +campo("e_registro","Registro/Central",a.registro)+campo("e_raca","Raça",a.raca)+campo("e_class","Class. genética",a.classificacao_genetica)
+      +campo("e_pai","Pai",a.pai_ref)+campo("e_mae","Mãe",a.mae_ref)
+      +campo("e_avop","Avô paterno",a.avo_paterno)+campo("e_avap","Avó paterna",a.ava_paterna)
+      +campo("e_avom","Avô materno",a.avo_materno)+campo("e_avam","Avó materna",a.ava_materna)
+      +campo("e_peso","Peso atual (kg)",a.peso,"number",'step="0.1"');
+  } else if(a.tipo==="femea"){
+    campos+=campo("e_maenum","Nº da mãe (matriz)",maeNum,"number")+campo("e_raca","Raça",a.raca)+campo("e_class","Class. genética",a.classificacao_genetica)+campo("e_registro","Registro",a.registro)
+      +campo("e_peso","Peso (kg)",a.peso,"number",'step="0.1"');
+  } else {
+    campos+=`<div class="field"><label>Origem</label><select id="e_origem" onchange="document.getElementById('e_compra_wrap').style.display=this.value==='compra'?'flex':'none'">
+         <option value="nascimento"${a.origem==="nascimento"?" selected":""}>Nascimento</option>
+         <option value="compra"${a.origem==="compra"?" selected":""}>Compra</option></select></div>`
+      +`<div class="field" id="e_compra_wrap" style="display:${a.origem==="compra"?"flex":"none"}"><label>Data da compra</label><input id="e_compra" type="date" value="${a.data_compra||""}"></div>`
+      +campo("e_maenum","Nº da mãe",maeNum,"number")+campo("e_raca","Raça",a.raca)+campo("e_registro","Registro",a.registro)+campo("e_class","Class. genética",a.classificacao_genetica)
+      +campo("e_pnasc","Peso nascimento (kg)",a.peso_nascimento,"number",'step="0.1"')+campo("e_desm","Peso desmame (kg)",a.peso_desmame,"number",'step="0.1"')+campo("e_peso","Peso atual (kg)",a.peso,"number",'step="0.1"');
+  }
+  abrirModal(`
+    <div class="modal-head"><b>Editar ${nomeTipo[a.tipo]} nº ${a.numero??"—"}</b>
+      <span id="edit-status" class="savest ok">salva automático</span>
+      <button class="x" onclick="fecharModalRender()">✕</button></div>
+    <div class="modal-body" onchange="autoEdit('${a.id}','${a.tipo}')"><div class="grid">${campos}</div>
+      ${a.tipo==="touro"?formIndices(a.indices):""}
+      <div class="field" style="margin-top:12px"><label>Observações</label><textarea id="e_obs" rows="2">${esc(a.observacoes)||""}</textarea></div>
+      <p class="muted" style="margin-top:10px">Cada campo grava sozinho ao sair dele. Você também pode usar o botão abaixo.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="abrirFicha('${a.id}')">Ver ficha</button>
+      <button class="btn" onclick="salvarEdicao('${a.id}','${a.tipo}')">Salvar e fechar</button>
+    </div>`);
+}
+function autoEdit(id, tipo){ if(AUTOSAVE) salvarEdicao(id, tipo, true); }
+async function salvarEdicao(id, tipo, silent){
+  const v=x=>{const el=document.getElementById(x); return el?el.value.trim():"";};
+  const rec={ tipo,
+    numero: v("e_numero")?parseInt(v("e_numero")):null,
+    data_nascimento: v("e_nasc")||null,
+    raca: v("e_raca")||null,
+    classificacao_genetica: v("e_class")||null,
+    registro: v("e_registro")||null,
+    peso: v("e_peso")?parseFloat(v("e_peso")):null,
+    observacoes: v("e_obs")||null,
+  };
+  if(tipo==="touro"){
+    Object.assign(rec,{procedencia:v("e_proc"), pai_ref:v("e_pai")||null, mae_ref:v("e_mae")||null,
+      avo_paterno:v("e_avop")||null, ava_paterna:v("e_avap")||null, avo_materno:v("e_avom")||null, ava_materna:v("e_avam")||null,
+      indices: coletarIndices()});
+  } else if(tipo==="femea"){
+    const gen=await resolverGenealogia(v("e_maenum"));
+    Object.assign(rec,{mae_id:gen.mae_id, mae_ref:(!gen.mae_id&&v("e_maenum"))?v("e_maenum"):null, pai_id:gen.pai_id, pai_ref:gen.pai_ref});
+  } else {
+    const gen=await resolverGenealogia(v("e_maenum"));
+    Object.assign(rec,{origem:v("e_origem"), data_compra:v("e_compra")||null, mae_id:gen.mae_id, mae_ref:(!gen.mae_id&&v("e_maenum"))?v("e_maenum"):null, pai_id:gen.pai_id, pai_ref:gen.pai_ref,
+      peso_nascimento:v("e_pnasc")?parseFloat(v("e_pnasc")):null, peso_desmame:v("e_desm")?parseFloat(v("e_desm")):null});
+  }
+  if(silent) setEditStatus("salvando…","idle");
+  if(!(await passouValidacao(rec, id, silent))){ if(silent) setEditStatus("corrija para salvar","err"); return; }
+  delete rec.tipo;
+  const { error } = await sb.from("animais").update(rec).eq("id",id);
+  if(error){ if(silent) setEditStatus("erro ao salvar","err"); return erroInsert(error, rec.numero); }
+  if(silent){ setEditStatus("salvo ✓","ok"); }
+  else { toast("Alterações salvas!","ok"); fecharModalRender(); }
+}
+
+// ================= INIT =================
+iniciarApp();
+</script>
+</body>
+</html>
