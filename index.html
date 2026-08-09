@@ -180,11 +180,9 @@
 </header>
 
 <nav class="tabs" id="main-tabs">
-  <button data-tab="rebanho" class="active">Rebanho</button>
+  <button data-tab="operacional" class="active">Operacional</button>
+  <button data-tab="rebanho">Rebanho</button>
   <button data-tab="cadastros">Cadastros</button>
-  <button data-tab="maquinas">Máquinas</button>
-  <button data-tab="suplementacao">Suplementação</button>
-  <button data-tab="operacional">Operacional</button>
   <button data-tab="relatorios">Relatórios</button>
 </nav>
 
@@ -412,7 +410,7 @@ async function iniciarApp(){
 // ================= HELPERS =================
 const $ = (s,r=document)=>r.querySelector(s);
 const app = $("#app");
-let state = { tab:"rebanho", sub:{} };
+let state = { tab:"operacional", sub:{} };
 
 function toast(msg, type=""){
   const t=$("#toast"); t.textContent=msg; t.className="toast show "+type;
@@ -469,8 +467,6 @@ function render(){
   if(state.tab==="cadastros") return renderCadastros();
   if(state.tab==="operacional") return renderOperacional();
   if(state.tab==="relatorios") return renderRelatorios();
-  if(state.tab==="maquinas") return placeholder("🚜","Máquinas","Controle de equipamentos, horímetro, manutenções e abastecimento. Módulo em construção.");
-  if(state.tab==="suplementacao") return placeholder("🌾","Suplementação","Cadastro de dietas, consumo de suplemento e custo por lote. Módulo em construção.");
 }
 function placeholder(ic,t,d){
   app.innerHTML=`<div class="card placeholder"><div class="ic">${ic}</div><h2>${t}</h2><p class="muted">${d}</p></div>`;
@@ -944,17 +940,27 @@ async function renderNumeros(){
 // OPERACIONAL — Manejo e Reprodução
 // ============================================================
 function renderOperacional(){
-  app.innerHTML = subnav([{id:"manejo",label:"Manejo do Rebanho"}],"operacional","manejo")
-    + `<div class="card">
-        <h3>Manejo do Rebanho</h3>
-        <p class="muted">Digite o código (número) do animal e busque. Peso/sanidade e (para fêmeas) reprodução aparecem juntos na mesma tela.</p>
-        <div class="actions">
-          <div class="field" style="max-width:180px"><label>Código do animal</label><input id="op_cod" type="number" placeholder="ex: 1"></div>
-          <button class="btn" onclick="buscarAnimalOp()" style="align-self:flex-end">Buscar</button>
-        </div>
+  const ativos=LOCAL.animais.filter(contaNoRebanho);
+  const nf=ativos.filter(a=>a.tipo==="femea").length;
+  const nm=ativos.filter(a=>a.tipo==="macho").length;
+  const nt=ativos.filter(a=>a.tipo==="touro").length;
+  app.innerHTML = `
+    <div class="kpis" style="margin-bottom:16px">
+      <div class="kpi"><div class="n">${ativos.length}</div><div class="l">Total no rebanho</div></div>
+      <div class="kpi"><div class="n">${nf}</div><div class="l">Fêmeas</div></div>
+      <div class="kpi"><div class="n">${nm}</div><div class="l">Machos</div></div>
+      <div class="kpi gold"><div class="n">${nt}</div><div class="l">Touros</div></div>
+    </div>
+    <div class="card">
+      <h3>Manejo do Rebanho</h3>
+      <p class="muted">Digite o número do animal para registrar peso, sanidade e reprodução.</p>
+      <div class="actions" style="align-items:flex-end">
+        <div class="field" style="max-width:220px"><label>Número do animal</label><input id="op_cod" type="number" placeholder="ex: 697" onkeydown="if(event.key==='Enter')buscarAnimalOp()"></div>
+        <button class="btn" onclick="buscarAnimalOp()">Buscar animal</button>
       </div>
-      <div id="op-body"></div>`;
-  bindSub();
+    </div>
+    <div id="op-body"></div>`;
+  const inp=document.getElementById("op_cod"); if(inp) inp.focus();
 }
 let animalOp=null;
 async function buscarAnimalOp(){
@@ -1310,13 +1316,12 @@ async function gerarRelatorio(){
     <div class="card">
       <h3>Reprodução das fêmeas</h3>
       <div class="kpis" style="margin-bottom:14px">
-        <div class="kpi"><div class="n" style="color:var(--ok)">${rp.prenhes}</div><div class="l">Prenhes (gestantes)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ok)">${rp.prenhes}</div><div class="l">Prenhas</div></div>
         <div class="kpi"><div class="n" style="color:var(--erro)">${rp.vazias}</div><div class="l">Vazias</div></div>
-        <div class="kpi"><div class="n" style="color:var(--verde2)">${rp.paridas}</div><div class="l">Paridas</div></div>
         <div class="kpi"><div class="n" style="color:var(--ouro)">${rp.em_processo}</div><div class="l">Em processo</div></div>
         <div class="kpi"><div class="n" style="color:var(--txt2)">${rp.sem_registro}</div><div class="l">Sem registro</div></div>
       </div>
-      <div class="muted">Comparativo prenhes × vazias (sobre ${basePr} fêmeas diagnosticadas)</div>
+      <div class="muted">Comparativo prenhas × vazias (sobre ${basePr} fêmeas diagnosticadas)</div>
       <div class="bar">
         ${pctPr?`<div class="seg pr" style="width:${pctPr}%">${pctPr}%</div>`:""}
         ${pctVz?`<div class="seg vz" style="width:${pctVz}%">${pctVz}%</div>`:""}
