@@ -262,8 +262,10 @@ function femeaRepro(f){
     ultimo_resultado: ultimo? (ultimo.resultado_prenhez ?? null) : null,
     ultima_fase: ultimo? ultimo.fase : null };
 }
+// touro de central (sêmen) não é animal físico — não conta no rebanho
+function contaNoRebanho(a){ return !a.arquivado && !(a.tipo==="touro" && a.procedencia==="central"); }
 function viewRows(name){
-  const ativos = LOCAL.animais.filter(a=>!a.arquivado);
+  const ativos = LOCAL.animais.filter(contaNoRebanho);
   if(name==="vw_contagem_tipo"){ const g={}; ativos.forEach(a=>g[a.tipo]=(g[a.tipo]||0)+1); return Object.keys(g).map(t=>({tipo:t,total:g[t]})); }
   if(name==="vw_faixa_etaria"){ const g={}; ativos.forEach(a=>{const k=a.tipo+"|"+faixaDe(idadeMeses(a.data_nascimento)); g[k]=(g[k]||0)+1;}); return Object.keys(g).map(k=>({tipo:k.split("|")[0],faixa:k.split("|")[1],total:g[k]})); }
   if(name==="vw_femea_reproducao"){ return ativos.filter(a=>a.tipo==="femea").map(femeaRepro); }
@@ -1237,6 +1239,7 @@ async function gerarRelatorio(){
   const cont={femea:0,macho:0,touro:0};
   (ct.data||[]).forEach(r=>cont[r.tipo]=r.total);
   const total=cont.femea+cont.macho+cont.touro;
+  const centrais = LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="touro" && a.procedencia==="central").length;
 
   // categorias por idade
   const cat={bezerra:0,novilha:0,vaca:0,bezerro:0,garrote:0,boi:0};
@@ -1260,8 +1263,9 @@ async function gerarRelatorio(){
         <div class="kpi"><div class="n">${total}</div><div class="l">Total ativos</div></div>
         <div class="kpi"><div class="n">${cont.femea}</div><div class="l">Fêmeas</div></div>
         <div class="kpi"><div class="n">${cont.macho}</div><div class="l">Machos</div></div>
-        <div class="kpi gold"><div class="n">${cont.touro}</div><div class="l">Touros</div></div>
+        <div class="kpi gold"><div class="n">${cont.touro}</div><div class="l">Touros (fazenda)</div></div>
       </div>
+      ${centrais?`<p class="muted" style="margin-top:12px">🧬 ${centrais} touro(s) de central (sêmen) cadastrado(s) — usados na reprodução (IATF), mas <b>não contam</b> no rebanho físico.</p>`:""}
     </div>
 
     <div class="card">
