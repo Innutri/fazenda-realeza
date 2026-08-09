@@ -856,6 +856,18 @@ async function salvarMacho(){
   toast("Macho cadastrado!","ok"); renderCadastro();
 }
 
+function filtrarAnimais(term){
+  term=(term||"").trim().toLowerCase();
+  const rows=document.querySelectorAll("#cad-list table.rt tbody tr");
+  let vis=0;
+  rows.forEach(tr=>{
+    const t=(tr.getAttribute("data-busca")||"").toLowerCase();
+    const show=!term || t.indexOf(term)>=0;
+    tr.style.display=show?"":"none";
+    if(show) vis++;
+  });
+  const c=document.getElementById("busca-count"); if(c) c.textContent=term?(vis+" encontrado(s)"):"";
+}
 async function listaAnimais(tipo){
   const el=$("#cad-list");
   el.innerHTML=`<div class="card"><div class="empty">Carregando…</div></div>`;
@@ -864,7 +876,7 @@ async function listaAnimais(tipo){
   const rotulo={touro:"Touros",femea:"Fêmeas",macho:"Machos"}[tipo];
   if(!data.length){ el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados</h3><div class="empty">Nenhum ${tipo} cadastrado ainda.</div></div>`; return; }
   let rows = data.map(a=>`
-    <tr>
+    <tr data-busca="${esc([a.numero,a.nome,a.raca,a.registro,a.classificacao_genetica].filter(x=>x!=null&&x!=="").join(" "))}">
       <td data-label="Nº"><a class="lnk" onclick="abrirFicha('${a.id}')">${a.numero??"—"}</a></td>
       ${tipo==="touro"?`<td data-label="Nome"><b>${esc(a.nome)||"—"}</b></td>`:""}
       <td data-label="Raça">${esc(a.raca)||"—"}</td>
@@ -879,6 +891,7 @@ async function listaAnimais(tipo){
       </div></td>
     </tr>`).join("");
   el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados (${data.length})</h3>
+    <div class="actions" style="margin-bottom:8px"><div class="field" style="max-width:340px;flex:1"><input id="busca-animal" oninput="filtrarAnimais(this.value)" placeholder="🔍 Buscar por nº, nome ou raça…"></div><span id="busca-count" class="muted" style="align-self:center"></span></div>
     <div style="overflow-x:auto"><table class="rt"><thead><tr>
       <th>Nº</th>${tipo==="touro"?"<th>Nome</th>":""}<th>Raça</th><th>Nascimento</th><th>Idade</th>
       ${tipo==="touro"?"<th>Procedência</th>":"<th>Categoria</th>"}
