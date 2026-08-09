@@ -1022,8 +1022,9 @@ async function histManejo(animalId){
 // --------- REPRODUÇÃO (FÊMEA) ---------
 function tipoCob(t){ return t==="iatf"?"IATF":t==="touro"?"Touro (equipe)":"—"; }
 async function listaTourosOptions(){
-  const { data:touros } = await sb.from("animais").select("id,numero,raca").eq("tipo","touro").eq("arquivado",false).order("numero");
-  return (touros||[]).map(t=>`<option value="${t.id}">${t.numero} — ${esc(t.raca)||"touro"}</option>`).join("") || '<option value="">nenhum touro cadastrado</option>';
+  // IATF usa sêmen de central — listar apenas touros de central, mostrando o nome
+  const { data:touros } = await sb.from("animais").select("*").eq("tipo","touro").eq("arquivado",false).eq("procedencia","central").order("numero");
+  return (touros||[]).map(t=>`<option value="${t.id}">${t.numero} — ${esc(t.nome||t.raca)||"touro"}</option>`).join("") || '<option value="">nenhum touro de central cadastrado</option>';
 }
 function listaEquipesOptions(){
   return (LOCAL.equipes||[]).map(e=>`<option value="${e.id}">${esc(e.nome)}${e.touros?(" — "+esc(e.touros)):""}</option>`).join("") || '<option value="">nenhuma equipe cadastrada</option>';
@@ -1137,7 +1138,9 @@ async function salvarReproducao(animalId,ciclo){
   } else {
     sireId=v("rp_touro").value||null;
     const nm=v("rp_tnome")?v("rp_tnome").value.trim():"";
-    rec.touro_id=sireId; rec.touro_nome=nm||null; sireNome=nm||null;
+    let selNome=nm;
+    if(!selNome && sireId){ const t=(LOCAL.animais||[]).find(a=>a.id===sireId); if(t) selNome=(t.nome||("nº "+t.numero)); }
+    rec.touro_id=sireId; rec.touro_nome=selNome||null; sireNome=selNome||null;
   }
   const { data:novo, error } = await sb.from("reproducao").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
