@@ -696,6 +696,19 @@ function fichaIndices(ind){
     + `</tbody></table></div>`;
 }
 
+// selects de Raça e Classificação genética a partir dos cadastros
+function optsFrom(list, sel){
+  sel=sel||"";
+  let out=`<option value="">— selecione —</option>`;
+  const has=list.some(x=>x===sel);
+  if(sel && !has) out+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`;
+  out+=list.map(x=>`<option value="${esc(x)}"${x===sel?" selected":""}>${esc(x)}</option>`).join("");
+  return out;
+}
+function optRacas(sel){ return optsFrom((LOCAL.racas||[]).map(r=>r.nome).filter(Boolean), sel); }
+function optClass(sel){ return optsFrom((LOCAL.classificacoes||[]).map(r=>r.nome).filter(Boolean), sel); }
+function campoSelect(id,label,optsHtml){ return `<div class="field"><label>${label}</label><select id="${id}">${optsHtml}</select></div>`; }
+
 function formTouro(){
   $("#cad-form").innerHTML = `
   <div class="card">
@@ -706,8 +719,8 @@ function formTouro(){
       <div class="field"><label>Procedência</label><select id="t_proc"><option value="fazenda">Touro Fazenda</option><option value="central">Central</option></select></div>
       <div class="field"><label>Registro / Central</label><input id="t_registro" placeholder="código de registro"></div>
       <div class="field"><label>Data de nascimento</label><input id="t_nasc" type="date"></div>
-      <div class="field"><label>Raça</label><input id="t_raca" placeholder="Nelore, Angus…"></div>
-      <div class="field"><label>Classificação genética</label><input id="t_class" placeholder="ex: PO, elite"></div>
+      <div class="field"><label>Raça</label><select id="t_raca">${optRacas("")}</select></div>
+      <div class="field"><label>Classificação genética</label><select id="t_class">${optClass("")}</select></div>
       <div class="field"><label>Pai</label><input id="t_pai" placeholder="nome/nº do pai"></div>
       <div class="field"><label>Mãe</label><input id="t_mae" placeholder="nome/nº da mãe"></div>
       <div class="field"><label>Avô paterno</label><input id="t_avop"></div>
@@ -756,8 +769,8 @@ function formFemea(){
       <div class="field"><label>Número</label><input id="f_numero" type="number" placeholder="sugestão…"></div>
       <div class="field"><label>Data de nascimento</label><input id="f_nasc" type="date"></div>
       <div class="field"><label>Nº da mãe (matriz)</label><input id="f_mae" type="number" placeholder="opcional"></div>
-      <div class="field"><label>Raça</label><input id="f_raca" placeholder="Nelore…"></div>
-      <div class="field"><label>Classificação genética</label><input id="f_class"></div>
+      <div class="field"><label>Raça</label><select id="f_raca">${optRacas("")}</select></div>
+      <div class="field"><label>Classificação genética</label><select id="f_class">${optClass("")}</select></div>
       <div class="field"><label>Registro</label><input id="f_registro"></div>
       <div class="field"><label>Peso (kg)</label><input id="f_peso" type="number" step="0.1"></div>
     </div>
@@ -814,9 +827,9 @@ function formMacho(){
       <div class="field"><label>Data de nascimento</label><input id="m_nasc" type="date"></div>
       <div class="field" id="m_compra_wrap" style="display:none"><label>Data da compra</label><input id="m_compra" type="date"></div>
       <div class="field"><label>Nº da mãe</label><input id="m_mae" type="number" placeholder="opcional"></div>
-      <div class="field"><label>Raça</label><input id="m_raca"></div>
+      <div class="field"><label>Raça</label><select id="m_raca">${optRacas("")}</select></div>
       <div class="field"><label>Registro</label><input id="m_registro"></div>
-      <div class="field"><label>Classificação genética</label><input id="m_class"></div>
+      <div class="field"><label>Classificação genética</label><select id="m_class">${optClass("")}</select></div>
       <div class="field"><label>Peso nascimento (kg)</label><input id="m_pnasc" type="number" step="0.1"></div>
       <div class="field"><label>Peso desmame (kg)</label><input id="m_desm" type="number" step="0.1"></div>
       <div class="field"><label>Peso atual (kg)</label><input id="m_peso" type="number" step="0.1"></div>
@@ -953,23 +966,13 @@ async function renderNumeros(){
 // OPERACIONAL — Manejo e Reprodução
 // ============================================================
 function renderOperacional(){
-  const ativos=LOCAL.animais.filter(contaNoRebanho);
-  const nf=ativos.filter(a=>a.tipo==="femea").length;
-  const nm=ativos.filter(a=>a.tipo==="macho").length;
-  const nt=ativos.filter(a=>a.tipo==="touro").length;
   app.innerHTML = `
-    <div class="kpis" style="margin-bottom:16px">
-      <div class="kpi"><div class="n">${ativos.length}</div><div class="l">Total no rebanho</div></div>
-      <div class="kpi"><div class="n">${nf}</div><div class="l">Fêmeas</div></div>
-      <div class="kpi"><div class="n">${nm}</div><div class="l">Machos</div></div>
-      <div class="kpi gold"><div class="n">${nt}</div><div class="l">Touros</div></div>
-    </div>
-    <div class="card">
-      <h3>Manejo do Rebanho</h3>
-      <p class="muted">Digite o número do animal para registrar peso, sanidade e reprodução.</p>
-      <div class="actions" style="align-items:flex-end">
-        <div class="field" style="max-width:220px"><label>Número do animal</label><input id="op_cod" type="number" placeholder="ex: 697" onkeydown="if(event.key==='Enter')buscarAnimalOp()"></div>
-        <button class="btn" onclick="buscarAnimalOp()">Buscar animal</button>
+    <div class="card" style="text-align:center;padding:26px 16px">
+      <h3 style="font-size:19px;display:block;border:none">Buscar animal no curral</h3>
+      <p class="muted">Digite o número do animal e toque em Buscar (ou Enter).</p>
+      <div style="display:flex;gap:12px;justify-content:center;align-items:stretch;flex-wrap:wrap;margin-top:10px">
+        <input id="op_cod" type="number" inputmode="numeric" placeholder="Nº do animal" onkeydown="if(event.key==='Enter')buscarAnimalOp()" style="flex:1;min-width:170px;max-width:340px;font-size:40px;font-weight:800;text-align:center;padding:14px 16px;border:2px solid var(--linha);border-radius:12px">
+        <button class="btn" onclick="buscarAnimalOp()" style="font-size:22px;font-weight:700;padding:0 34px">🔍 Buscar</button>
       </div>
     </div>
     <div id="op-body"></div>`;
@@ -1477,20 +1480,20 @@ async function editarAnimal(id){
   let campos=campo("e_numero","Número",a.numero,"number")+campo("e_nasc","Data de nascimento",a.data_nascimento,"date");
   if(a.tipo==="touro"){
     campos+=campo("e_nome","Nome do touro",a.nome)+`<div class="field"><label>Procedência</label><select id="e_proc"><option value="fazenda"${a.procedencia==="fazenda"?" selected":""}>Touro Fazenda</option><option value="central"${a.procedencia==="central"?" selected":""}>Central</option></select></div>`
-      +campo("e_registro","Registro/Central",a.registro)+campo("e_raca","Raça",a.raca)+campo("e_class","Class. genética",a.classificacao_genetica)
+      +campo("e_registro","Registro/Central",a.registro)+campoSelect("e_raca","Raça",optRacas(a.raca))+campoSelect("e_class","Class. genética",optClass(a.classificacao_genetica))
       +campo("e_pai","Pai",a.pai_ref)+campo("e_mae","Mãe",a.mae_ref)
       +campo("e_avop","Avô paterno",a.avo_paterno)+campo("e_avap","Avó paterna",a.ava_paterna)
       +campo("e_avom","Avô materno",a.avo_materno)+campo("e_avam","Avó materna",a.ava_materna)
       +campo("e_peso","Peso atual (kg)",a.peso,"number",'step="0.1"');
   } else if(a.tipo==="femea"){
-    campos+=campo("e_maenum","Nº da mãe (matriz)",maeNum,"number")+campo("e_raca","Raça",a.raca)+campo("e_class","Class. genética",a.classificacao_genetica)+campo("e_registro","Registro",a.registro)
+    campos+=campo("e_maenum","Nº da mãe (matriz)",maeNum,"number")+campoSelect("e_raca","Raça",optRacas(a.raca))+campoSelect("e_class","Class. genética",optClass(a.classificacao_genetica))+campo("e_registro","Registro",a.registro)
       +campo("e_peso","Peso (kg)",a.peso,"number",'step="0.1"');
   } else {
     campos+=`<div class="field"><label>Origem</label><select id="e_origem" onchange="document.getElementById('e_compra_wrap').style.display=this.value==='compra'?'flex':'none'">
          <option value="nascimento"${a.origem==="nascimento"?" selected":""}>Nascimento</option>
          <option value="compra"${a.origem==="compra"?" selected":""}>Compra</option></select></div>`
       +`<div class="field" id="e_compra_wrap" style="display:${a.origem==="compra"?"flex":"none"}"><label>Data da compra</label><input id="e_compra" type="date" value="${a.data_compra||""}"></div>`
-      +campo("e_maenum","Nº da mãe",maeNum,"number")+campo("e_raca","Raça",a.raca)+campo("e_registro","Registro",a.registro)+campo("e_class","Class. genética",a.classificacao_genetica)
+      +campo("e_maenum","Nº da mãe",maeNum,"number")+campoSelect("e_raca","Raça",optRacas(a.raca))+campo("e_registro","Registro",a.registro)+campoSelect("e_class","Class. genética",optClass(a.classificacao_genetica))
       +campo("e_pnasc","Peso nascimento (kg)",a.peso_nascimento,"number",'step="0.1"')+campo("e_desm","Peso desmame (kg)",a.peso_desmame,"number",'step="0.1"')+campo("e_peso","Peso atual (kg)",a.peso,"number",'step="0.1"');
   }
   abrirModal(`
