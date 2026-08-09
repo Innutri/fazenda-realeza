@@ -1054,7 +1054,7 @@ async function opFemea(a){
       <h3>Reprodução</h3>
       ${flow}
       <div class="divider"></div>
-      ${histReproducao(cs)}
+      ${histReproducao(cs, true)}
     </div>`;
   histManejo(a.id);
 }
@@ -1174,7 +1174,17 @@ async function descartarAnimal(animalId,numero){
   if(error) return toast("Erro: "+error.message,"err");
   toast(`Fêmea nº ${numero} enviada para descarte (arquivada).`,"ok"); render();
 }
-function histReproducao(ciclos){
+async function excluirReproducao(id){
+  if(!confirm("Excluir este registro de reprodução? Esta ação não pode ser desfeita.")) return;
+  const links=(LOCAL.reproducao_touros||[]).filter(r=>r.reproducao_id===id);
+  for(const l of links){ await RS.from("reproducao_touros").delete().eq("id",l.id); }
+  LOCAL.reproducao_touros=(LOCAL.reproducao_touros||[]).filter(r=>r.reproducao_id!==id);
+  await RS.from("reproducao").delete().eq("id",id);
+  LOCAL.reproducao=(LOCAL.reproducao||[]).filter(r=>r.id!==id);
+  flashSave(); toast("Registro de reprodução excluído.","");
+  fecharModal(); buscarAnimalOp();
+}
+function histReproducao(ciclos, editable){
   if(!ciclos.length) return `<p class="muted">Sem registros de reprodução.</p>`;
   const resTag=c=>{
     if(c.fase==="aguardando") return `<span class="tag proc">AGUARDANDO</span>`;
@@ -1190,8 +1200,9 @@ function histReproducao(ciclos){
     <td data-label="Data cob.">${fmtDate(c.data_cobertura)}</td>
     <td data-label="Diagnóstico">${fmtDate(c.data_diagnostico)}</td>
     <td data-label="Resultado">${resTag(c)}</td>
+    ${editable?`<td><button class="btn danger sm" onclick="excluirReproducao('${c.id}')">Excluir</button></td>`:""}
   </tr>`).join("");
-  return `<h3>Histórico reprodutivo</h3><div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Cobertura</th><th>Data cob.</th><th>Diagnóstico</th><th>Resultado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<h3>Histórico reprodutivo</h3><div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Cobertura</th><th>Data cob.</th><th>Diagnóstico</th><th>Resultado</th>${editable?"<th></th>":""}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // ============================================================
