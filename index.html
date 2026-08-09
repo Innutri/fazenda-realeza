@@ -706,6 +706,7 @@ function formTouro(){
     <h3>Cadastro de Touro Reprodutor</h3>
     <div class="grid">
       <div class="field"><label>Número do touro</label><input id="t_numero" type="number" placeholder="sugestão…"></div>
+      <div class="field"><label>Nome do touro</label><input id="t_nome" placeholder="nome de identificação"></div>
       <div class="field"><label>Procedência</label><select id="t_proc"><option value="fazenda">Touro Fazenda</option><option value="central">Central</option></select></div>
       <div class="field"><label>Registro / Central</label><input id="t_registro" placeholder="código de registro"></div>
       <div class="field"><label>Data de nascimento</label><input id="t_nasc" type="date"></div>
@@ -730,6 +731,7 @@ async function salvarTouro(){
   const rec={
     tipo:"touro",
     numero: v("t_numero")? parseInt(v("t_numero")):null,
+    nome: v("t_nome")||null,
     procedencia: v("t_proc"),
     registro: v("t_registro")||null,
     data_nascimento: v("t_nasc")||null,
@@ -868,6 +870,7 @@ async function listaAnimais(tipo){
   let rows = data.map(a=>`
     <tr>
       <td data-label="Nº"><a class="lnk" onclick="abrirFicha('${a.id}')">${a.numero??"—"}</a></td>
+      ${tipo==="touro"?`<td data-label="Nome"><b>${esc(a.nome)||"—"}</b></td>`:""}
       <td data-label="Raça">${esc(a.raca)||"—"}</td>
       <td data-label="Nascimento">${fmtDate(a.data_nascimento)}</td>
       <td data-label="Idade">${idadeTxt(a.data_nascimento)}</td>
@@ -881,7 +884,7 @@ async function listaAnimais(tipo){
     </tr>`).join("");
   el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados (${data.length})</h3>
     <div style="overflow-x:auto"><table class="rt"><thead><tr>
-      <th>Nº</th><th>Raça</th><th>Nascimento</th><th>Idade</th>
+      <th>Nº</th>${tipo==="touro"?"<th>Nome</th>":""}<th>Raça</th><th>Nascimento</th><th>Idade</th>
       ${tipo==="touro"?"<th>Procedência</th>":"<th>Categoria</th>"}
       <th>Class. genética</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div></div>`;
@@ -1391,6 +1394,7 @@ async function abrirFicha(id){
 
   const dados=`<h4>Dados</h4><div class="dl">
     ${it("Número",`<b>${a.numero??a.codigo_arquivo??"—"}</b>`)}
+    ${a.tipo==="touro"?it("Nome",esc(a.nome)):""}
     ${it("Tipo",`<span class="tag ${a.tipo}">${a.tipo}</span>`)}
     ${a.tipo==="touro"?it("Procedência",a.procedencia==="central"?"Central":"Fazenda"):""}
     ${a.tipo!=="touro"?it("Categoria",esc(categoriaAnimal(a))):""}
@@ -1444,7 +1448,7 @@ async function editarAnimal(id){
   if(a.mae_id){ const {data:mm}=await sb.from("animais").select("numero").eq("id",a.mae_id).maybeSingle(); if(mm&&mm.numero!=null) maeNum=mm.numero; }
   let campos=campo("e_numero","Número",a.numero,"number")+campo("e_nasc","Data de nascimento",a.data_nascimento,"date");
   if(a.tipo==="touro"){
-    campos+=`<div class="field"><label>Procedência</label><select id="e_proc"><option value="fazenda"${a.procedencia==="fazenda"?" selected":""}>Touro Fazenda</option><option value="central"${a.procedencia==="central"?" selected":""}>Central</option></select></div>`
+    campos+=campo("e_nome","Nome do touro",a.nome)+`<div class="field"><label>Procedência</label><select id="e_proc"><option value="fazenda"${a.procedencia==="fazenda"?" selected":""}>Touro Fazenda</option><option value="central"${a.procedencia==="central"?" selected":""}>Central</option></select></div>`
       +campo("e_registro","Registro/Central",a.registro)+campo("e_raca","Raça",a.raca)+campo("e_class","Class. genética",a.classificacao_genetica)
       +campo("e_pai","Pai",a.pai_ref)+campo("e_mae","Mãe",a.mae_ref)
       +campo("e_avop","Avô paterno",a.avo_paterno)+campo("e_avap","Avó paterna",a.ava_paterna)
@@ -1488,7 +1492,7 @@ async function salvarEdicao(id, tipo, silent){
     observacoes: v("e_obs")||null,
   };
   if(tipo==="touro"){
-    Object.assign(rec,{procedencia:v("e_proc"), pai_ref:v("e_pai")||null, mae_ref:v("e_mae")||null,
+    Object.assign(rec,{nome:v("e_nome")||null, procedencia:v("e_proc"), pai_ref:v("e_pai")||null, mae_ref:v("e_mae")||null,
       avo_paterno:v("e_avop")||null, ava_paterna:v("e_avap")||null, avo_materno:v("e_avom")||null, ava_materna:v("e_avam")||null,
       indices: coletarIndices()});
   } else if(tipo==="femea"){
