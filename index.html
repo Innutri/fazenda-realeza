@@ -168,11 +168,11 @@
     table.rt td .cellbtns .btn{flex:1;min-width:80px;justify-content:center;padding:8px}
   }
   /* Operacional / curral — letras grandes para uso no campo */
-  .curral h3{font-size:20px}
+  .curral h3{font-size:26px}
   .curral h2{font-size:22px}
   .curral .muted{font-size:15px}
   .curral .field label{font-size:16px;font-weight:700}
-  .curral .field input,.curral .field select,.curral .field textarea{font-size:24px;padding:14px 16px;font-weight:600}
+  .curral .field input,.curral .field select,.curral .field textarea{font-size:20px;padding:12px 14px;font-weight:600;min-width:0;width:100%;max-width:100%}
   .curral .checks{gap:22px;margin-top:8px}
   .curral .checks label{font-size:20px;gap:10px;font-weight:600}
   .curral .checks input{width:26px;height:26px}
@@ -725,6 +725,14 @@ function optsFrom(list, sel){
 }
 function optRacas(sel){ return optsFrom((LOCAL.racas||[]).map(r=>r.nome).filter(Boolean), sel); }
 function optClass(sel){ return optsFrom((LOCAL.classificacoes||[]).map(r=>r.nome).filter(Boolean), sel); }
+function optVermifugos(sel){
+  const lista=(LOCAL.medicamentos||[]).filter(m=>m.tipo==="vermifugo").map(m=>m.nome).filter(Boolean);
+  let out=`<option value="">— não aplicado —</option>`;
+  if(sel && !lista.some(x=>x===sel)) out+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`;
+  out+=lista.map(x=>`<option value="${esc(x)}"${x===sel?" selected":""}>${esc(x)}</option>`).join("");
+  if(!lista.length) out+=`<option value="" disabled>(cadastre em Cadastros ▸ Medic./Vacinas, tipo Vermífugo)</option>`;
+  return out;
+}
 function campoSelect(id,label,optsHtml){ return `<div class="field"><label>${label}</label><select id="${id}">${optsHtml}</select></div>`; }
 
 function formTouro(){
@@ -1064,8 +1072,8 @@ function blocoManejo(a){
         <div class="field"><label>Data</label><input id="mo_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
         <div class="field"><label>Peso (kg)</label><input id="mo_peso" type="number" step="0.1" placeholder="ex: 320" style="background:#fff59d;border-color:var(--ouro);border-width:2px"></div>
       </div>
+      <div class="field" style="margin-top:8px"><label>Vermífugo</label><select id="mo_verm_sel">${optVermifugos("")}</select></div>
       <div class="checks">
-        <label><input type="checkbox" id="mo_verm"> Vermífugo</label>
         <label><input type="checkbox" id="mo_carb"> Carbúnculo</label>
       </div>
       <div class="field" style="margin-top:12px"><label>Outros medicamentos / observações</label><input id="mo_out"></div>
@@ -1088,7 +1096,8 @@ async function salvarManejo(animalId){
     animal_id:animalId,
     data:v("mo_data").value||null,
     peso:v("mo_peso").value?parseFloat(v("mo_peso").value):null,
-    vermifugo:v("mo_verm").checked, carbunculo:v("mo_carb").checked,
+    vermifugo: !!v("mo_verm_sel").value, vermifugo_nome: v("mo_verm_sel").value||null,
+    carbunculo:v("mo_carb").checked,
     vacina_reprodutiva:false,
     outros_medicamentos:v("mo_out").value.trim()||null,
   };
@@ -1101,7 +1110,7 @@ async function histManejo(animalId){
   const el=$("#hist-manejo");
   if(!data||!data.length){ el.innerHTML=`<p class="muted">Sem manejos registrados.</p>`; return; }
   el.innerHTML=`<h3>Histórico de manejo</h3><ul class="inline-list">`+data.map(o=>{
-    const meds=[o.vermifugo?"Vermífugo":null,o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
+    const meds=[o.vermifugo_nome?("Vermífugo: "+o.vermifugo_nome):(o.vermifugo?"Vermífugo":null),o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
     return `<li><span>${fmtDate(o.data)} · ${o.peso?o.peso+" kg":"sem peso"}</span><span>${esc(meds)||"—"}</span></li>`;
   }).join("")+`</ul>`;
 }
@@ -1184,7 +1193,7 @@ async function flowNovaReproducao(a,prox,ultimo){
         <option value="prenhe" style="background:#e1f4e6;color:#1f7a45">Prenha</option>
         <option value="vazia" style="background:#fdeaea;color:#b23b3b">Vazia</option>
         <option value="aguardando" style="background:#fdf3e0;color:#9a6b1a">Diagnóstico ou implante</option></select></div>
-      <div class="field" id="rp_ddiag_wrap"><label>Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" id="rp_ddiag_wrap"><label id="rp_ddiag_lbl">Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="checks" style="margin-top:8px">
       <label><input type="checkbox" id="rp_repro"> Vacina reprodutiva</label>
@@ -1206,7 +1215,8 @@ function toggleDiag(){
   const sel=document.getElementById("rp_diag"); const dg=sel.value;
   const impl = dg==="aguardando";
   const cob=document.getElementById("rp_cob_wrap"); if(cob) cob.style.display = impl?"none":"block";
-  document.getElementById("rp_ddiag_wrap").style.display = impl?"none":"flex";
+  document.getElementById("rp_ddiag_wrap").style.display = "flex";
+  const lbl=document.getElementById("rp_ddiag_lbl"); if(lbl) lbl.textContent = impl?"Data do implante":"Data do diagnóstico";
   const cor = dg==="prenhe"?["#e1f4e6","#1f7a45"] : dg==="vazia"?["#fdeaea","#b23b3b"] : ["#fdf3e0","#9a6b1a"];
   sel.style.background=cor[0]; sel.style.color=cor[1]; sel.style.fontWeight="700";
 }
@@ -1216,7 +1226,7 @@ async function salvarReproducao(animalId,ciclo){
   const implante = dg==="aguardando";
   const tipo = implante ? null : v("rp_tipo").value;
   const rec={ animal_id:animalId, ciclo, tipo,
-    data_cobertura: implante ? null : (v("rp_data").value||null),
+    data_cobertura: implante ? (v("rp_ddiag").value||null) : (v("rp_data").value||null),
     vacina_reprodutiva:v("rp_repro").checked, vermifugo:false, carbunculo:false,
     outros_medicamentos:v("rp_out").value.trim()||null,
     fase: dg,
@@ -1249,7 +1259,7 @@ function flowDiagnostico(a,c){
   const titulo = implante
     ? `Implante — <span class="tag proc">aguardando diagnóstico</span>`
     : `Registro nº ${c.ciclo} — ${tipoCob(c.tipo)} · <span class="tag proc">aguardando diagnóstico</span>`;
-  const cobLine = implante ? `<div class="muted" style="margin-top:6px">Implante registrado — sem touro/equipe atribuídos.</div>`
+  const cobLine = implante ? `<div class="muted" style="margin-top:6px">Implante registrado${c.data_cobertura?(" em "+fmtDate(c.data_cobertura)):""} — sem touro/equipe atribuídos.</div>`
     : `<div class="muted" style="margin-top:6px">Cobertura: ${coberturaTxt(c)} · ${fmtDate(c.data_cobertura)}</div>`;
   return `<div class="flowbox">
     <b>${titulo}</b>
@@ -1687,7 +1697,7 @@ async function abrirFicha(id){
   let manejo=`<h4>Manejo e pesos</h4>`;
   if(ops&&ops.length){
     manejo+=`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Peso</th><th>Sanidade</th></tr></thead><tbody>`+
-      ops.map(o=>{const meds=[o.vermifugo?"Vermífugo":null,o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
+      ops.map(o=>{const meds=[o.vermifugo_nome?("Vermífugo: "+o.vermifugo_nome):(o.vermifugo?"Vermífugo":null),o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
         return `<tr><td>${fmtDate(o.data)}</td><td>${o.peso?o.peso+" kg":"—"}</td><td>${esc(meds)||"—"}</td></tr>`;}).join("")+
       `</tbody></table></div>`;
   } else manejo+=`<p class="muted">Sem manejos registrados.</p>`;
