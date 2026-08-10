@@ -1643,6 +1643,22 @@ async function gerarRelatorio(){
     if(vazia||iv.ok) descarte.push({f, motivo: iv.ok?"Vazia repetida (2+ em 6 meses)":"Vazia", cat:categoriaAnimal(f), idade:idadeTxt(f.data_nascimento), data: u?(u.data_diagnostico||u.data_cobertura):null}); });
   descarte.sort((a,b)=>(a.f.numero||0)-(b.f.numero||0));
 
+  // Previsão de partos
+  const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const mesNome=mk=>{ const p=mk.split('-'); return MESES[parseInt(p[1],10)-1]+'/'+p[0]; };
+  const hojeMs=Date.now();
+  const partos=[]; let semPrev=0;
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)){
+    let dp=u.data_prevista_parto;
+    if(!dp && u.data_cobertura){ const d=new Date(u.data_cobertura); d.setDate(d.getDate()+295); dp=d.toISOString().slice(0,10); }
+    if(dp) partos.push({f, dp, cob:coberturaTxt(u)}); else semPrev++;
+  }});
+  partos.sort((a,b)=> a.dp<b.dp?-1:a.dp>b.dp?1:0);
+  const porMesParto={}; partos.forEach(p=>{ const mk=p.dp.slice(0,7); porMesParto[mk]=(porMesParto[mk]||0)+1; });
+  const mesesParto=Object.entries(porMesParto).sort((a,b)=>a[0]<b[0]?-1:1);
+  const prox60=partos.filter(p=>{ const dias=(new Date(p.dp)-hojeMs)/86400000; return dias>=0 && dias<=60; }).length;
+  const faltamTxt=(dp)=>{ const dias=Math.round((new Date(dp)-hojeMs)/86400000); return dias>=0?("faltam "+dias+" dias"):("atrasado "+(-dias)+" dias"); };
+
   body.innerHTML=`
     <div class="card">
       <h3>Rebanho — visão geral</h3>
@@ -1758,6 +1774,24 @@ async function gerarRelatorio(){
       </div>
       <p class="muted" style="margin-top:10px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data não entraram.)`:""}</p>
       `:`<p class="muted">Ainda não dá para distribuir — informe a data da monta das prenhas.${semDataMonta?` (${semDataMonta} prenha(s) sem data.)`:""}</p>`}
+    </div>
+
+    <div class="card">
+      <h3>Previsão de partos</h3>
+      <p class="muted">Pela data da monta/IATF + gestação (~295 dias), ou pela data prevista informada no diagnóstico.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${partos.length}</div><div class="l">Prenhas com previsão</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${prox60}</div><div class="l">Partos nos próximos 60 dias</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${semPrev}</div><div class="l">Prenhas sem previsão (falta data da monta)</div></div>
+      </div>
+      ${mesesParto.length?`
+      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Partos por mês</h4>
+      <div style="overflow-x:auto"><table><thead><tr><th>Mês</th><th>Partos previstos</th></tr></thead>
+      <tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesNome(mk)}</td><td><b>${q}</b></td></tr>`).join("")}</tbody></table></div>
+      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Detalhe (por data prevista)</h4>
+      <div style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
+      <tbody>${partos.map(p=>`<tr><td data-label="Nº"><b>${p.f.numero??"—"}</b></td><td data-label="Categoria">${esc(categoriaAnimal(p.f))||"—"}</td><td data-label="Cobertura">${esc(p.cob)}</td><td data-label="Previsão">${fmtDate(p.dp)}</td><td data-label="Faltam">${faltamTxt(p.dp)}</td></tr>`).join("")}</tbody></table></div>
+      `:`<p class="muted">Nenhuma prenhez com data de monta/previsão ainda. Informe a data da monta nas prenhas (ex.: as do lote NOMA) para o app projetar o parto.</p>`}
     </div>
 
     <div class="card">
