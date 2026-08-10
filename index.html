@@ -1012,7 +1012,7 @@ function blocoManejo(a){
       <p class="muted">Pesagem e sanidade do animal nº ${a.numero}.</p>
       <div class="grid">
         <div class="field"><label>Data</label><input id="mo_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="field"><label>Peso (kg)</label><input id="mo_peso" type="number" step="0.1" placeholder="ex: 320" style="background:#fff6c9;border-color:var(--ouro);border-width:2px"></div>
+        <div class="field"><label>Peso (kg)</label><input id="mo_peso" type="number" step="0.1" placeholder="ex: 320" style="background:#fff59d;border-color:var(--ouro);border-width:2px"></div>
       </div>
       <div class="checks">
         <label><input type="checkbox" id="mo_verm"> Vermífugo</label>
@@ -1128,10 +1128,10 @@ async function flowNovaReproducao(a,prox,ultimo){
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
     <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select></div>
     <div class="grid" style="margin-top:8px">
-      <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()">
-        <option value="prenhe">Prenha</option>
-        <option value="vazia">Vazia</option>
-        <option value="aguardando">Aguardando diagnóstico</option></select></div>
+      <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()" style="background:#e1f4e6;color:#1f7a45;font-weight:700">
+        <option value="prenhe" style="background:#e1f4e6;color:#1f7a45">Prenha</option>
+        <option value="vazia" style="background:#fdeaea;color:#b23b3b">Vazia</option>
+        <option value="aguardando" style="background:#fdf3e0;color:#9a6b1a">Diagnóstico ou implante</option></select></div>
       <div class="field" id="rp_ddiag_wrap"><label>Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="checks" style="margin-top:8px">
@@ -1151,8 +1151,10 @@ function toggleTipoCob(){
   document.getElementById("rp_data_lbl").textContent = t==="iatf"?"Data da IATF":"Data / período da monta";
 }
 function toggleDiag(){
-  const dg=document.getElementById("rp_diag").value;
+  const sel=document.getElementById("rp_diag"); const dg=sel.value;
   document.getElementById("rp_ddiag_wrap").style.display = dg==="aguardando"?"none":"flex";
+  const cor = dg==="prenhe"?["#e1f4e6","#1f7a45"] : dg==="vazia"?["#fdeaea","#b23b3b"] : ["#fdf3e0","#9a6b1a"];
+  sel.style.background=cor[0]; sel.style.color=cor[1]; sel.style.fontWeight="700";
 }
 async function salvarReproducao(animalId,ciclo){
   const v=id=>document.getElementById(id);
