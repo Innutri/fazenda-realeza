@@ -136,6 +136,16 @@
   .cellbtns{display:flex;gap:6px;justify-content:flex-end}
   .lnk{color:var(--verde2);cursor:pointer;font-weight:700;text-decoration:none}
   .lnk:hover{text-decoration:underline}
+  .gmdbox{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 16px}
+  .gmdbox-vazio{margin:6px 0 14px;font-size:13px}
+  .gmd-item{flex:1;min-width:160px;background:linear-gradient(135deg,#f2f8f4,#eaf3ee);border:1px solid var(--linha);border-radius:12px;padding:12px 16px;display:flex;flex-direction:column;gap:3px}
+  .gmd-lbl{font-size:12px;color:var(--txt2);font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+  .gmd-val{font-size:24px;font-weight:800;line-height:1.1}
+  .gmd-sub{font-size:12px;color:var(--txt2)}
+  .curral .gmd-lbl{font-size:15px}
+  .curral .gmd-val{font-size:32px}
+  .curral .gmd-sub{font-size:14px}
+  .curral .gmdbox-vazio{font-size:16px}
   @media(max-width:640px){
     .wrap{padding:14px 10px 50px}
     header.top{padding:11px 14px;gap:8px}
@@ -947,6 +957,29 @@ async function arquivar(id,numero){
 }
 
 // --------- REGISTROS ---------
+function gmdRebanhoStats(){
+  const ativos=(LOCAL.animais||[]).filter(contaNoRebanho);
+  const totais=[];
+  for(const a of ativos){
+    const ops=(LOCAL.operacoes_rebanho||[]).filter(o=>o.animal_id===a.id);
+    const g=calcGMD(ops);
+    if(g.n>=2 && g.total!=null) totais.push(g.total);
+  }
+  if(!totais.length) return {n:0, media:null};
+  return {n:totais.length, media:Math.round(totais.reduce((s,v)=>s+v,0)/totais.length), min:Math.min(...totais), max:Math.max(...totais)};
+}
+function cardGMDRebanho(){
+  const gr=gmdRebanhoStats();
+  const corpo = gr.n
+    ? `<div class="gmdbox"><div class="gmd-item">
+         <span class="gmd-lbl">GMD Total médio</span>
+         <span class="gmd-val" style="color:${gr.media>=0?'#1f7a45':'#b23b3b'}">${(gr.media>0?'+':'')+gr.media} g/dia</span>
+         <span class="gmd-sub">${gr.n} animais com 2+ pesagens · variação de ${gr.min} a ${gr.max} g/dia</span>
+       </div></div>`
+    : `<p class="muted">Ainda não há animais com 2 ou mais pesagens. Assim que houver uma segunda pesagem, a média do rebanho aparece aqui.</p>`;
+  return `<div class="card"><h3>GMD Total médio do rebanho</h3>
+    <p class="muted">Média do ganho diário (1ª pesagem até a última) dos animais da fazenda.</p>${corpo}</div>`;
+}
 async function renderRegistros(){
   const body=$("#rebanho-body");
   body.innerHTML=`<div class="card"><div class="empty">Carregando registros…</div></div>`;
@@ -961,7 +994,7 @@ async function renderRegistros(){
       <td data-label="Pai">${esc(pai(a))}</td>
       <td data-label="Mãe">${esc(maeTxt(a))}</td>
     </tr>`).join("");
-  body.innerHTML=`
+  body.innerHTML=cardGMDRebanho()+`
     <div class="card">
       <h3>Registros — Nascimento / Compra / Desmame</h3>
       <p class="muted">Machos e touros: dados de nascimento (ou data de compra) e peso de desmame. Numeração sequencial única para todos os animais.</p>
@@ -1105,11 +1138,38 @@ async function salvarManejo(animalId){
   if(error) return toast("Erro: "+error.message,"err");
   toast("Manejo registrado!","ok"); buscarAnimalOp();
 }
+function diffDias(d1,d2){ return Math.round((new Date(d2)-new Date(d1))/86400000); }
+function calcGMD(ops){
+  const ps=(ops||[]).filter(o=>o.peso!=null && o.data && !isNaN(parseFloat(o.peso)))
+    .map(o=>({data:o.data, peso:parseFloat(o.peso)}))
+    .sort((a,b)=> a.data<b.data?-1:a.data>b.data?1:0);
+  if(ps.length<2) return {n:ps.length};
+  const prim=ps[0], ult=ps[ps.length-1], penult=ps[ps.length-2];
+  const dT=diffDias(prim.data,ult.data), dP=diffDias(penult.data,ult.data);
+  return { n:ps.length, prim, ult, penult, dT, dP,
+    total: dT>0? Math.round((ult.peso-prim.peso)/dT*1000): null,
+    parcial: dP>0? Math.round((ult.peso-penult.peso)/dP*1000): null };
+}
+function gmdBox(ops){
+  const g=calcGMD(ops);
+  if(g.n<2) return `<div class="gmdbox-vazio muted">GMD: precisa de pelo menos 2 pesagens para calcular (registradas: ${g.n}).</div>`;
+  const fmtG=v=> v==null?"—":((v>0?"+":"")+v+" g/dia");
+  const cor=v=> v==null?"#6b7280": v>=0?"#1f7a45":"#b23b3b";
+  return `<div class="gmdbox">
+    <div class="gmd-item"><span class="gmd-lbl">GMD Total</span>
+      <span class="gmd-val" style="color:${cor(g.total)}">${fmtG(g.total)}</span>
+      <span class="gmd-sub">1ª→última: ${g.prim.peso}→${g.ult.peso} kg em ${g.dT} dia(s)</span></div>
+    <div class="gmd-item"><span class="gmd-lbl">GMD Parcial</span>
+      <span class="gmd-val" style="color:${cor(g.parcial)}">${fmtG(g.parcial)}</span>
+      <span class="gmd-sub">últimas 2: ${g.penult.peso}→${g.ult.peso} kg em ${g.dP} dia(s)</span></div>
+  </div>`;
+}
 async function histManejo(animalId){
-  const { data } = await sb.from("operacoes_rebanho").select("*").eq("animal_id",animalId).order("data",{ascending:false}).limit(8);
+  const { data } = await sb.from("operacoes_rebanho").select("*").eq("animal_id",animalId).order("data",{ascending:false});
   const el=$("#hist-manejo");
   if(!data||!data.length){ el.innerHTML=`<p class="muted">Sem manejos registrados.</p>`; return; }
-  el.innerHTML=`<h3>Histórico de manejo</h3><ul class="inline-list">`+data.map(o=>{
+  const recentes=data.slice(0,8);
+  el.innerHTML=gmdBox(data)+`<h3>Histórico de manejo</h3><ul class="inline-list">`+recentes.map(o=>{
     const meds=[o.vermifugo_nome?("Vermífugo: "+o.vermifugo_nome):(o.vermifugo?"Vermífugo":null),o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
     return `<li><span>${fmtDate(o.data)} · ${o.peso?o.peso+" kg":"sem peso"}</span><span>${esc(meds)||"—"}</span></li>`;
   }).join("")+`</ul>`;
@@ -1696,6 +1756,7 @@ async function abrirFicha(id){
 
   let manejo=`<h4>Manejo e pesos</h4>`;
   if(ops&&ops.length){
+    manejo+=gmdBox(ops);
     manejo+=`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Peso</th><th>Sanidade</th></tr></thead><tbody>`+
       ops.map(o=>{const meds=[o.vermifugo_nome?("Vermífugo: "+o.vermifugo_nome):(o.vermifugo?"Vermífugo":null),o.carbunculo?"Carbúnculo":null,o.vacina_reprodutiva?"V. reprodutiva":null,o.outros_medicamentos].filter(Boolean).join(", ");
         return `<tr><td>${fmtDate(o.data)}</td><td>${o.peso?o.peso+" kg":"—"}</td><td>${esc(meds)||"—"}</td></tr>`;}).join("")+
