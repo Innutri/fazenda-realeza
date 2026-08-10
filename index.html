@@ -146,6 +146,13 @@
   .curral .gmd-val{font-size:32px}
   .curral .gmd-sub{font-size:14px}
   .curral .gmdbox-vazio{font-size:16px}
+  details.exp{margin:14px 0 0}
+  details.exp>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2);font-weight:700;padding:8px 12px;background:#eef5f0;border:1px solid var(--linha);border-radius:8px}
+  details.exp>summary::-webkit-details-marker{display:none}
+  details.exp>summary::before{content:"▸";font-size:11px}
+  details.exp[open]>summary::before{content:"▾"}
+  details.exp>summary:hover{background:#e2efe7}
+  details.exp>.exp-body{margin-top:8px}
   @media(max-width:640px){
     .wrap{padding:14px 10px 50px}
     header.top{padding:11px 14px;gap:8px}
@@ -1185,6 +1192,12 @@ async function listaTourosOptions(){
 function listaEquipesOptions(){
   return (LOCAL.equipes||[]).map(e=>`<option value="${e.id}">${esc(e.nome)}${e.touros?(" — "+esc(e.touros)):""}</option>`).join("") || '<option value="">nenhuma equipe cadastrada</option>';
 }
+function datalistSemen(){
+  const nomes=new Set();
+  (LOCAL.animais||[]).filter(a=>a.tipo==="touro" && !a.arquivado && a.procedencia==="central" && a.nome).forEach(t=>nomes.add(t.nome));
+  (LOCAL.reproducao||[]).filter(r=>r.tipo==="iatf" && r.touro_nome).forEach(r=>nomes.add(r.touro_nome));
+  return `<datalist id="dl_semen">`+[...nomes].sort().map(n=>`<option value="${esc(n)}">`).join("")+`</datalist>`;
+}
 function coberturaTxt(c){
   if(c.tipo==="iatf") return c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF";
   if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
@@ -1228,7 +1241,6 @@ function situacaoFemea(ciclos){
   return {confirmados:conf, tag};
 }
 async function flowNovaReproducao(a,prox,ultimo){
-  const opts=await listaTourosOptions();
   const eqs=listaEquipesOptions();
   const vazia = ultimo && ultimo.fase==="vazia";
   const aviso = !ultimo ? `<p class="muted">Primeiro registro de reprodução desta fêmea. No curral ela pode já estar prenha por uma equipe de touro.</p>`
@@ -1246,13 +1258,13 @@ async function flowNovaReproducao(a,prox,ultimo){
       <div class="field"><label id="rp_data_lbl">Data / período da monta</label><input id="rp_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
-    <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select></div>
+    <div class="field" id="rp_semen_wrap" style="margin-top:8px;display:none"><label>Sêmen / touro (IATF)</label><input id="rp_semen" list="dl_semen" placeholder="ex: Zero Um FIV da Jacamim">${datalistSemen()}</div>
     </div>
     <div class="grid" style="margin-top:8px">
       <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()" style="background:#e1f4e6;color:#1f7a45;font-weight:700">
         <option value="prenhe" style="background:#e1f4e6;color:#1f7a45">Prenha</option>
         <option value="vazia" style="background:#fdeaea;color:#b23b3b">Vazia</option>
-        <option value="aguardando" style="background:#fdf3e0;color:#9a6b1a">Diagnóstico ou implante</option></select></div>
+        <option value="aguardando" style="background:#fdf3e0;color:#9a6b1a">Inseminação / Implante</option></select></div>
       <div class="field" id="rp_ddiag_wrap"><label id="rp_ddiag_lbl">Data do diagnóstico</label><input id="rp_ddiag" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="checks" style="margin-top:8px">
@@ -1268,50 +1280,42 @@ async function flowNovaReproducao(a,prox,ultimo){
 function toggleTipoCob(){
   const t=document.getElementById("rp_tipo").value;
   document.getElementById("rp_equipe_wrap").style.display = t==="touro"?"flex":"none";
-  document.getElementById("rp_touro_wrap").style.display = t==="iatf"?"flex":"none";
+  document.getElementById("rp_semen_wrap").style.display = t==="iatf"?"flex":"none";
   document.getElementById("rp_data_lbl").textContent = t==="iatf"?"Data da IATF":"Data / período da monta";
 }
 function toggleDiag(){
   const sel=document.getElementById("rp_diag"); const dg=sel.value;
-  const impl = dg==="aguardando";
-  const cob=document.getElementById("rp_cob_wrap"); if(cob) cob.style.display = impl?"none":"block";
-  document.getElementById("rp_ddiag_wrap").style.display = "flex";
-  const lbl=document.getElementById("rp_ddiag_lbl"); if(lbl) lbl.textContent = impl?"Data do implante":"Data do diagnóstico";
+  const aguard = dg==="aguardando";
+  document.getElementById("rp_ddiag_wrap").style.display = aguard?"none":"flex";
   const cor = dg==="prenhe"?["#e1f4e6","#1f7a45"] : dg==="vazia"?["#fdeaea","#b23b3b"] : ["#fdf3e0","#9a6b1a"];
   sel.style.background=cor[0]; sel.style.color=cor[1]; sel.style.fontWeight="700";
 }
 async function salvarReproducao(animalId,ciclo){
   const v=id=>document.getElementById(id);
   const dg=v("rp_diag").value;
-  const implante = dg==="aguardando";
-  const tipo = implante ? null : v("rp_tipo").value;
+  const aguard = dg==="aguardando";
+  const tipo = v("rp_tipo").value;
   const rec={ animal_id:animalId, ciclo, tipo,
-    data_cobertura: implante ? (v("rp_ddiag").value||null) : (v("rp_data").value||null),
+    data_cobertura: v("rp_data").value||null,
     vacina_reprodutiva:v("rp_repro").checked, vermifugo:false, carbunculo:false,
     outros_medicamentos:v("rp_out").value.trim()||null,
     fase: dg,
     resultado_prenhez: dg==="prenhe"?true: dg==="vazia"?false:null,
-    data_diagnostico: !implante ? (v("rp_ddiag").value||null) : null };
-  let sireId=null, sireNome=null;
-  if(!implante && tipo==="touro"){
+    data_diagnostico: aguard ? null : (v("rp_ddiag").value||null) };
+  let sireNome=null;
+  if(tipo==="touro"){
     const eq=(LOCAL.equipes||[]).find(e=>e.id===v("rp_equipe").value);
     rec.equipe_id=v("rp_equipe").value||null; rec.equipe_nome=eq?eq.nome:null;
     sireNome = eq? ("Equipe "+eq.nome) : "Equipe";
-  } else if(!implante){
-    sireId=v("rp_touro").value||null;
-    const nm=v("rp_tnome")?v("rp_tnome").value.trim():"";
-    let selNome=nm;
-    if(!selNome && sireId){ const t=(LOCAL.animais||[]).find(a=>a.id===sireId); if(t) selNome=(t.nome||("nº "+t.numero)); }
-    rec.touro_id=sireId; rec.touro_nome=selNome||null; sireNome=selNome||null;
+  } else {
+    const nm=v("rp_semen")?v("rp_semen").value.trim():"";
+    rec.touro_nome = nm||null; sireNome = nm||null;
   }
   const { data:novo, error } = await sb.from("reproducao").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
   const repId=novo[0].id;
-  if(!implante){
-    if(sireId) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_id:sireId});
-    else if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
-  }
-  toast(implante?"Implante registrado. Aguardando diagnóstico.": dg==="prenhe"?"Prenhez registrada!": "Registrada como vazia.", dg==="vazia"?"":"ok");
+  if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
+  toast(aguard?"Cobertura registrada. Aguardando diagnóstico no próximo curral.": dg==="prenhe"?"Prenhez registrada!": "Registrada como vazia.", dg==="vazia"?"":"ok");
   buscarAnimalOp();
 }
 function flowDiagnostico(a,c){
@@ -1659,6 +1663,17 @@ async function gerarRelatorio(){
   const prox60=partos.filter(p=>{ const dias=(new Date(p.dp)-hojeMs)/86400000; return dias>=0 && dias<=60; }).length;
   const faltamTxt=(dp)=>{ const dias=Math.round((new Date(dp)-hojeMs)/86400000); return dias>=0?("faltam "+dias+" dias"):("atrasado "+(-dias)+" dias"); };
 
+  // Taxa de concepção por touro/sêmen e por data de diagnóstico
+  const touroLabel = r => r.tipo==="iatf" ? (r.touro_nome||"IATF (sem sêmen)") : (r.equipe_nome? ("Equipe "+r.equipe_nome) : (r.touro_nome||"Touro"));
+  const metodoLabel = t => t==="iatf"?"IATF":"Monta natural";
+  const diagRecs = (LOCAL.reproducao||[]).filter(r=>r.resultado_prenhez!==null);
+  const concTouro={};
+  diagRecs.forEach(r=>{ const k=touroLabel(r); if(!concTouro[k]) concTouro[k]={nome:k, metodo:r.tipo, pren:0, vaz:0}; if(r.resultado_prenhez) concTouro[k].pren++; else concTouro[k].vaz++; });
+  const concTouroRows=Object.values(concTouro).map(d=>({...d, tot:d.pren+d.vaz})).sort((a,b)=>b.tot-a.tot);
+  const concDT={};
+  diagRecs.forEach(r=>{ const dt=r.data_diagnostico||"—"; const k=dt+"|"+touroLabel(r)+"|"+r.tipo; if(!concDT[k]) concDT[k]={data:dt, nome:touroLabel(r), metodo:r.tipo, pren:0, vaz:0}; if(r.resultado_prenhez) concDT[k].pren++; else concDT[k].vaz++; });
+  const concDTRows=Object.values(concDT).map(d=>({...d, tot:d.pren+d.vaz})).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:0);
+
   body.innerHTML=`
     <div class="card">
       <h3>Rebanho — visão geral</h3>
@@ -1777,6 +1792,19 @@ async function gerarRelatorio(){
     </div>
 
     <div class="card">
+      <h3>Taxa de concepção por touro / sêmen</h3>
+      <p class="muted">Sobre as fêmeas já diagnosticadas (prenhas + vazias) — prenhez × vazias por touro e por data.</p>
+      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:34%"><col style="width:16%"><col style="width:12%"><col style="width:12%"><col style="width:13%"><col style="width:13%"></colgroup>
+      <thead><tr><th>Touro / Sêmen</th><th>Método</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
+      <tbody>${concTouroRows.length? concTouroRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td>${esc(d.nome)}</td><td>${metodoLabel(d.metodo)}</td><td><b style="color:var(--ok)">${d.pren}</b></td><td><b style="color:var(--erro)">${d.vaz}</b></td><td><b>${pp}%</b></td><td>${100-pp}%</td></tr>`;}).join("") : `<tr><td colspan="6" class="empty">Nenhum diagnóstico registrado ainda.</td></tr>`}</tbody></table></div>
+      ${concDTRows.length?`<details class="exp" ${concDTRows.length>15?"":"open"}>
+        <summary>Por data de diagnóstico (${concDTRows.length})</summary>
+        <div class="exp-body" style="overflow:auto;max-height:360px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Data</th><th>Touro / Sêmen</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
+        <tbody>${concDTRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td data-label="Data">${d.data==="—"?"—":fmtDate(d.data)}</td><td data-label="Touro">${esc(d.nome)}</td><td data-label="Prenhas"><b style="color:var(--ok)">${d.pren}</b></td><td data-label="Vazias"><b style="color:var(--erro)">${d.vaz}</b></td><td data-label="% Prenhez"><b>${pp}%</b></td><td data-label="% Vazia">${100-pp}%</td></tr>`;}).join("")}</tbody></table></div>
+      </details>`:""}
+    </div>
+
+    <div class="card">
       <h3>Previsão de partos</h3>
       <p class="muted">Pela data da monta/IATF + gestação (~295 dias), ou pela data prevista informada no diagnóstico.</p>
       <div class="kpis">
@@ -1788,9 +1816,11 @@ async function gerarRelatorio(){
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Partos por mês</h4>
       <div style="overflow-x:auto"><table><thead><tr><th>Mês</th><th>Partos previstos</th></tr></thead>
       <tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesNome(mk)}</td><td><b>${q}</b></td></tr>`).join("")}</tbody></table></div>
-      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Detalhe (por data prevista)</h4>
-      <div style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
-      <tbody>${partos.map(p=>`<tr><td data-label="Nº"><b>${p.f.numero??"—"}</b></td><td data-label="Categoria">${esc(categoriaAnimal(p.f))||"—"}</td><td data-label="Cobertura">${esc(p.cob)}</td><td data-label="Previsão">${fmtDate(p.dp)}</td><td data-label="Faltam">${faltamTxt(p.dp)}</td></tr>`).join("")}</tbody></table></div>
+      <details class="exp" ${partos.length>15?"":"open"}>
+        <summary>Detalhe por data prevista (${partos.length})</summary>
+        <div class="exp-body" style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
+        <tbody>${partos.map(p=>`<tr><td data-label="Nº"><b>${p.f.numero??"—"}</b></td><td data-label="Categoria">${esc(categoriaAnimal(p.f))||"—"}</td><td data-label="Cobertura">${esc(p.cob)}</td><td data-label="Previsão">${fmtDate(p.dp)}</td><td data-label="Faltam">${faltamTxt(p.dp)}</td></tr>`).join("")}</tbody></table></div>
+      </details>
       `:`<p class="muted">Nenhuma prenhez com data de monta/previsão ainda. Informe a data da monta nas prenhas (ex.: as do lote NOMA) para o app projetar o parto.</p>`}
     </div>
 
