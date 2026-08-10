@@ -974,7 +974,7 @@ function cardGMDRebanho(){
     ? `<div class="gmdbox"><div class="gmd-item">
          <span class="gmd-lbl">GMD Total médio</span>
          <span class="gmd-val" style="color:${gr.media>=0?'#1f7a45':'#b23b3b'}">${(gr.media>0?'+':'')+gr.media} g/dia</span>
-         <span class="gmd-sub">${gr.n} animais com 2+ pesagens · variação de ${gr.min} a ${gr.max} g/dia</span>
+         <span class="gmd-sub">${gr.n} ${gr.n>1?'animais':'animal'} com 2+ pesagens${gr.min!==gr.max?(' · variação de '+gr.min+' a '+gr.max+' g/dia'):''}</span>
        </div></div>`
     : `<p class="muted">Ainda não há animais com 2 ou mais pesagens. Assim que houver uma segunda pesagem, a média do rebanho aparece aqui.</p>`;
   return `<div class="card"><h3>GMD Total médio do rebanho</h3>
