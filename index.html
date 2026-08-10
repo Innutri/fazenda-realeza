@@ -200,6 +200,7 @@
   <button data-tab="rebanho">Rebanho</button>
   <button data-tab="cadastros">Cadastros</button>
   <button data-tab="relatorios">Relatórios</button>
+  <button data-tab="balanca">⚖️ Balança</button>
 </nav>
 
 <div class="wrap" id="app"></div>
@@ -483,6 +484,7 @@ function render(){
   if(state.tab==="cadastros") return renderCadastros();
   if(state.tab==="operacional") return renderOperacional();
   if(state.tab==="relatorios") return renderRelatorios();
+  if(state.tab==="balanca") return renderBalanca();
 }
 function placeholder(ic,t,d){
   app.innerHTML=`<div class="card placeholder"><div class="ic">${ic}</div><h2>${t}</h2><p class="muted">${d}</p></div>`;
@@ -1294,6 +1296,137 @@ function histReproducao(ciclos, editable){
     ${editable?`<td><button class="btn danger sm" onclick="excluirReproducao('${c.id}')">Excluir</button></td>`:""}
   </tr>`).join("");
   return `<h3>Histórico reprodutivo</h3><div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Cobertura</th><th>Data cob.</th><th>Diagnóstico</th><th>Resultado</th>${editable?"<th></th>":""}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ============================================================
+// BALANÇA — IMPORTAR PESOS POR ARQUIVO (CSV da XR5000)
+// ============================================================
+let BAL = null;
+function renderBalanca(){
+  app.innerHTML = `
+  <div class="card">
+    <h3>⚖️ Importar pesos da balança (XR5000)</h3>
+    <p class="muted" style="font-size:15px;line-height:1.55">
+      A XR5000 usa Bluetooth antigo, que o navegador do celular não consegue acessar.
+      O jeito certo é <b>exportar a sessão de pesagem</b> da balança — por <b>pen drive USB</b> na própria balança,
+      ou pela nuvem/app Datamars — e subir o arquivo aqui. O app preenche os pesos sozinho,
+      casando pelo <b>número do animal</b>.
+    </p>
+    <div class="grid">
+      <div class="field">
+        <label>Arquivo da balança (CSV / TXT)</label>
+        <input id="bal_file" type="file" accept=".csv,.txt,text/csv" onchange="balancaArquivo(this)">
+      </div>
+      <div class="field">
+        <label>Data da pesagem</label>
+        <input id="bal_data" type="date" value="${new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+    <details style="margin-top:10px">
+      <summary class="muted" style="cursor:pointer">Ou colar os dados manualmente (número e peso)</summary>
+      <textarea id="bal_texto" placeholder="Ex.:\n100 205\n101 198\n102 240\n(separado por espaço, vírgula, ponto-e-vírgula ou tabulação)" style="width:100%;min-height:100px;margin-top:8px;font-family:monospace;font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:8px"></textarea>
+      <div class="actions"><button class="btn ghost" type="button" onclick="balancaColar()">Ler dados colados</button></div>
+    </details>
+    <div id="bal-map"></div>
+    <div id="bal-prev"></div>
+  </div>`;
+}
+function _balDetect(line){
+  const c=[[';',line.split(';').length],[',',line.split(',').length],['\t',line.split('\t').length],[' ',line.trim().split(/\s+/).length]];
+  c.sort((a,b)=>b[1]-a[1]); return c[0][1]>1?c[0][0]:',';
+}
+function _balSplit(line,d){
+  if(d===' ') return line.trim().split(/\s+/);
+  const out=[]; let cur='',q=false;
+  for(let i=0;i<line.length;i++){ const ch=line[i];
+    if(q){ if(ch=='"'){ if(line[i+1]=='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch=='"') q=true; else if(ch===d){ out.push(cur); cur=''; } else cur+=ch; } }
+  out.push(cur); return out.map(s=>s.trim());
+}
+function balancaParse(text){
+  const linhas=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
+  if(!linhas.length){ toast('Arquivo/dados vazios.','err'); return; }
+  const d=_balDetect(linhas[0]);
+  const rows=linhas.map(l=>_balSplit(l,d)).filter(r=>r.length>=2);
+  if(!rows.length){ toast('Não achei colunas no arquivo.','err'); return; }
+  const primeira=rows[0];
+  const temCab=primeira.some(c=>c && isNaN(parseFloat(String(c).replace(',','.'))));
+  let header,dados;
+  if(temCab){ header=primeira.map((c,i)=>c||('Coluna '+(i+1))); dados=rows.slice(1); }
+  else { header=primeira.map((_,i)=>'Coluna '+(i+1)); dados=rows; }
+  BAL={header,dados};
+  const acha=re=>{ for(let i=0;i<header.length;i++) if(re.test(header[i])) return i; return -1; };
+  let cNum=acha(/vid|visual|n[uú]?mero|number|animal|brinco/i); if(cNum<0) cNum=0;
+  let cPeso=acha(/peso|weight|\bkg\b|\bwt\b/i); if(cPeso<0) cPeso=header.length>1?header.length-1:0;
+  const opts=sel=>header.map((h,i)=>`<option value="${i}" ${i===sel?'selected':''}>${esc(h)}</option>`).join('');
+  $('#bal-map').innerHTML=`
+    <div class="divider"></div>
+    <p class="muted">Encontrei ${dados.length} linha(s) e ${header.length} coluna(s). Confira as colunas:</p>
+    <div class="grid">
+      <div class="field"><label>Coluna do NÚMERO do animal</label><select id="bal_cnum" onchange="balancaPreview()">${opts(cNum)}</select></div>
+      <div class="field"><label>Coluna do PESO (kg)</label><select id="bal_cpeso" onchange="balancaPreview()">${opts(cPeso)}</select></div>
+    </div>`;
+  balancaPreview();
+}
+function balancaArquivo(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>balancaParse(String(rd.result||''));
+  rd.onerror=()=>toast('Não consegui ler o arquivo.','err');
+  rd.readAsText(f);
+}
+function balancaColar(){
+  const t=($('#bal_texto').value||'').trim();
+  if(!t){ toast('Cole os dados primeiro.','err'); return; }
+  balancaParse(t);
+}
+function _balNum(s){ const m=String(s).match(/\d+/); return m?parseInt(m[0],10):null; }
+function _balPeso(s){ const m=String(s).match(/-?\d+(?:[.,]\d+)?/); return m?parseFloat(m[0].replace(',','.')):null; }
+function balancaLinhas(){
+  if(!BAL) return [];
+  const ci=parseInt($('#bal_cnum').value,10), cp=parseInt($('#bal_cpeso').value,10);
+  const mapa=new Map();
+  for(const r of BAL.dados){ const n=_balNum(r[ci]); const p=_balPeso(r[cp]);
+    if(n==null||p==null||p<=0) continue; mapa.set(n,p); }
+  const out=[];
+  for(const [n,p] of mapa){
+    const a=LOCAL.animais.find(x=>x.numero===n && !x.arquivado);
+    out.push({numero:n, peso:Math.round(p*10)/10, animal:a||null}); }
+  out.sort((a,b)=>a.numero-b.numero); return out;
+}
+function balancaPreview(){
+  const linhas=balancaLinhas();
+  const ok=linhas.filter(l=>l.animal), nao=linhas.filter(l=>!l.animal);
+  const rowsHtml=linhas.slice(0,300).map(l=>`<tr>
+    <td><b>${l.numero}</b></td><td>${l.peso} kg</td>
+    <td>${l.animal?('<span class="tag '+l.animal.tipo+'">'+l.animal.tipo+'</span>'):'<span class="muted">não cadastrado</span>'}</td></tr>`).join('');
+  $('#bal-prev').innerHTML=`
+    <div class="divider"></div>
+    <p><b>${ok.length}</b> encontrado(s) · <b>${nao.length}</b> sem cadastro${linhas.length>300?' · mostrando 300 primeiros':''}</p>
+    <div style="max-height:340px;overflow:auto;border:1px solid var(--linha);border-radius:8px">
+      <table class="rt"><thead><tr><th>Número</th><th>Peso</th><th>Situação</th></tr></thead><tbody>${rowsHtml||'<tr><td colspan="3" class="muted">Nada para importar.</td></tr>'}</tbody></table>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn" type="button" onclick="balancaImportar()" ${ok.length?'':'disabled'}>Importar ${ok.length} peso(s)</button>
+    </div>
+    ${nao.length?`<p class="muted" style="font-size:13px">Sem cadastro (ignorados): ${nao.slice(0,40).map(l=>l.numero).join(', ')}${nao.length>40?'…':''}</p>`:''}`;
+}
+async function balancaImportar(){
+  const linhas=balancaLinhas().filter(l=>l.animal);
+  if(!linhas.length){ toast('Nada para importar.','err'); return; }
+  const data=$('#bal_data').value||new Date().toISOString().slice(0,10);
+  const btn=document.querySelector('#bal-prev .btn'); if(btn){ btn.disabled=true; btn.textContent='Importando…'; }
+  const recs=linhas.map(l=>({animal_id:l.animal.id, data, peso:l.peso, vermifugo:false, carbunculo:false, vacina_reprodutiva:false, outros_medicamentos:'Balança XR5000'}));
+  const { error } = await sb.from('operacoes_rebanho').insert(recs);
+  if(error){ toast('Erro: '+error.message,'err'); if(btn){btn.disabled=false;btn.textContent='Importar '+linhas.length+' peso(s)';} return; }
+  toast(linhas.length+' pesos importados!','ok');
+  BAL=null;
+  $('#bal-prev').innerHTML=`<div class="divider"></div>
+    <div class="card" style="background:#e9f7ee;border-color:#8fd6a8">
+      <b>✔ ${linhas.length} pesos importados</b> na data ${fmtDate(data)}.<br>
+      <span class="muted">Cada animal recebeu um registro de manejo com o peso. Confira buscando o animal no Operacional.</span>
+    </div>`;
+  $('#bal-map').innerHTML='';
 }
 
 // ============================================================
