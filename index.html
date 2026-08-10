@@ -1593,6 +1593,19 @@ async function gerarRelatorio(){
     if(iv.ok) repProblema.push({f, iv, nvazias: ciclos.filter(c=>c.resultado_prenhez===false).length});
   });
 
+  // Estatística reprodutiva sobre fêmeas aptas (12 meses ou mais)
+  const femeasAtivas = LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea");
+  const totalFemeasReb = femeasAtivas.length;
+  const statusReprodF = (f)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="parida") return "parida"; return "sem"; };
+  const f12 = femeasAtivas.filter(a=>{ const m=idadeMeses(a.data_nascimento); return m!=null && m>=12; });
+  const semData12 = femeasAtivas.filter(a=>idadeMeses(a.data_nascimento)==null).length;
+  const n12=f12.length;
+  const s12={prenhe:0,vazia:0,aguardando:0,parida:0,sem:0};
+  f12.forEach(f=>{ s12[statusReprodF(f)]++; });
+  const naoP12 = n12 - s12.prenhe;
+  const p12=(x)=> n12? Math.round(x/n12*100):0;
+  const pctPren12 = p12(s12.prenhe);
+
   body.innerHTML=`
     <div class="card">
       <h3>Rebanho — visão geral</h3>
@@ -1629,6 +1642,27 @@ async function gerarRelatorio(){
       <h3>Faixa etária (distribuição por idade)</h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Tipo</th><th>0–12 meses</th><th>13–24 meses</th><th>25+ meses</th><th>Sem data</th><th>Total</th></tr></thead>
       <tbody>${linhaFx("femea")}${linhaFx("macho")}${linhaFx("touro")}</tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h3>Estatística reprodutiva — fêmeas aptas (12 meses ou mais)</h3>
+      <p class="muted">Base: fêmeas <b>ativas com 12 meses ou mais</b> (idade reprodutiva).${semData12?` <span style="color:var(--erro)">${semData12} sem data de nascimento ficaram de fora.</span>`:""}</p>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n">${n12}</div><div class="l">Fêmeas aptas (12m+)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ok)">${s12.prenhe}</div><div class="l">Prenhas (${pctPren12}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${naoP12}</div><div class="l">Não prenhas (${p12(naoP12)}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${s12.vazia}</div><div class="l">Vazias (${p12(s12.vazia)}%)</div></div>
+      </div>
+      <div class="muted" style="margin-top:12px">Prenhas × não prenhas (sobre ${n12} fêmeas de 12 meses ou mais)</div>
+      <div class="bar">
+        ${n12&&pctPren12?`<div class="seg pr" style="width:${pctPren12}%">${pctPren12}%</div>`:""}
+        ${n12&&naoP12?`<div class="seg vz" style="width:${100-pctPren12}%">${100-pctPren12}%</div>`:""}
+        ${!n12?`<div class="seg" style="width:100%;background:#ccc;color:#555">nenhuma fêmea apta</div>`:""}
+      </div>
+      <div class="muted" style="margin-top:10px;font-size:12px">Não prenhas = vazias (${s12.vazia}) + em processo/implante (${s12.aguardando}) + paridas (${s12.parida}) + sem registro (${s12.sem}).</div>
+      <div class="kpis" style="margin-top:16px">
+        <div class="kpi gold"><div class="n">${totalFemeasReb}</div><div class="l">Total do rebanho de fêmeas (todas as idades)</div></div>
+      </div>
     </div>
 
     <div class="card">
