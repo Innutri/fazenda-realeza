@@ -1619,6 +1619,9 @@ async function gerarRelatorio(){
   // 2) por método
   let mIatf=0,mTouro=0; prenhasRecs.forEach(x=>{ if(x.r.tipo==="iatf") mIatf++; else mTouro++; });
   const pIatf=totPrenhas?Math.round(mIatf/totPrenhas*100):0; const pTouro=totPrenhas?100-pIatf:0;
+  // monta natural detalhada por equipe de touro
+  const porEquipe={}; prenhasRecs.forEach(x=>{ if(x.r.tipo==="touro"){ const nome=x.r.equipe_nome||"Sem equipe"; porEquipe[nome]=(porEquipe[nome]||0)+1; } });
+  const equipeRows=Object.entries(porEquipe).sort((a,b)=>b[1]-a[1]);
   // 3) por categoria
   const catRep={bezerra:{exp:0,pren:0},novilha:{exp:0,pren:0},vaca:{exp:0,pren:0}};
   femeasAtivas.forEach(f=>{ const c=categoriaAnimal(f); if(!catRep[c]) return; const u=ultimoRepro(f.id); if(u){ catRep[c].exp++; if(u.fase==="prenhe"||u.resultado_prenhez===true) catRep[c].pren++; } });
@@ -1724,7 +1727,11 @@ async function gerarRelatorio(){
       <div class="bar" style="margin-top:12px">
         ${pIatf?`<div class="seg" style="width:${pIatf}%;background:var(--verde2)">${pIatf}%</div>`:""}
         ${pTouro?`<div class="seg" style="width:${pTouro}%;background:var(--ouro);color:#3a2c00">${pTouro}%</div>`:""}
-      </div>`:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
+      </div>
+      ${mTouro?`<h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Monta natural — por equipe de touro</h4>
+      <div style="overflow-x:auto"><table><thead><tr><th>Equipe</th><th>Prenhas</th><th>% da monta natural</th></tr></thead>
+      <tbody>${equipeRows.map(([nome,q])=>`<tr><td>${nome==="Sem equipe"?"Sem equipe":("Equipe "+esc(nome))}</td><td><b>${q}</b></td><td>${Math.round(q/mTouro*100)}%</td></tr>`).join("")}</tbody></table></div>`:""}
+      `:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
     </div>
 
     <div class="card">
