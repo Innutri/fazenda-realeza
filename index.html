@@ -1748,10 +1748,10 @@ async function gerarRelatorio(){
         ${pTouro?`<div class="seg" style="width:${pTouro}%;background:var(--ouro);color:#3a2c00">${pTouro}%</div>`:""}
       </div>
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">IATF — por touro (sêmen)</h4>
-      <div style="overflow-x:auto"><table><thead><tr><th>Touro</th><th>Prenhas</th><th>% da IATF</th><th>% do total</th></tr></thead>
+      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
       <tbody>${touroRows.length? touroRows.map(([nome,q])=>`<tr><td>${esc(nome)}</td><td><b>${q}</b></td><td>${mIatf?Math.round(q/mIatf*100):0}%</td><td>${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por IATF ainda.</td></tr>`}</tbody></table></div>
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Monta natural — por equipe de touro</h4>
-      <div style="overflow-x:auto"><table><thead><tr><th>Equipe</th><th>Prenhas</th><th>% da monta natural</th><th>% do total</th></tr></thead>
+      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
       <tbody>${equipeRows.length? equipeRows.map(([nome,q])=>`<tr><td>${nome==="Sem equipe"?"Sem equipe":("Equipe "+esc(nome))}</td><td><b>${q}</b></td><td>${mTouro?Math.round(q/mTouro*100):0}%</td><td>${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por monta natural ainda.</td></tr>`}</tbody></table></div>
       `:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
     </div>
