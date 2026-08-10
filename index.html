@@ -1169,6 +1169,7 @@ async function flowNovaReproducao(a,prox,ultimo){
   return `<div class="flowbox">
     <b>Registrar reprodução (nº ${prox})</b>
     ${aviso}
+    <div id="rp_cob_wrap">
     <div class="grid" style="margin-top:10px">
       <div class="field"><label>Cobertura por</label><select id="rp_tipo" onchange="toggleTipoCob()">
         <option value="touro">Touro (equipe)</option>
@@ -1177,6 +1178,7 @@ async function flowNovaReproducao(a,prox,ultimo){
     </div>
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
     <div class="field" id="rp_touro_wrap" style="margin-top:8px;display:none"><label>Touro (sêmen)</label><select id="rp_touro">${opts}</select></div>
+    </div>
     <div class="grid" style="margin-top:8px">
       <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()" style="background:#e1f4e6;color:#1f7a45;font-weight:700">
         <option value="prenhe" style="background:#e1f4e6;color:#1f7a45">Prenha</option>
@@ -1202,26 +1204,30 @@ function toggleTipoCob(){
 }
 function toggleDiag(){
   const sel=document.getElementById("rp_diag"); const dg=sel.value;
-  document.getElementById("rp_ddiag_wrap").style.display = dg==="aguardando"?"none":"flex";
+  const impl = dg==="aguardando";
+  const cob=document.getElementById("rp_cob_wrap"); if(cob) cob.style.display = impl?"none":"block";
+  document.getElementById("rp_ddiag_wrap").style.display = impl?"none":"flex";
   const cor = dg==="prenhe"?["#e1f4e6","#1f7a45"] : dg==="vazia"?["#fdeaea","#b23b3b"] : ["#fdf3e0","#9a6b1a"];
   sel.style.background=cor[0]; sel.style.color=cor[1]; sel.style.fontWeight="700";
 }
 async function salvarReproducao(animalId,ciclo){
   const v=id=>document.getElementById(id);
-  const tipo=v("rp_tipo").value, dg=v("rp_diag").value;
+  const dg=v("rp_diag").value;
+  const implante = dg==="aguardando";
+  const tipo = implante ? null : v("rp_tipo").value;
   const rec={ animal_id:animalId, ciclo, tipo,
-    data_cobertura:v("rp_data").value||null,
+    data_cobertura: implante ? null : (v("rp_data").value||null),
     vacina_reprodutiva:v("rp_repro").checked, vermifugo:false, carbunculo:false,
     outros_medicamentos:v("rp_out").value.trim()||null,
     fase: dg,
     resultado_prenhez: dg==="prenhe"?true: dg==="vazia"?false:null,
-    data_diagnostico: dg!=="aguardando"? (v("rp_ddiag").value||null) : null };
+    data_diagnostico: !implante ? (v("rp_ddiag").value||null) : null };
   let sireId=null, sireNome=null;
-  if(tipo==="touro"){
+  if(!implante && tipo==="touro"){
     const eq=(LOCAL.equipes||[]).find(e=>e.id===v("rp_equipe").value);
     rec.equipe_id=v("rp_equipe").value||null; rec.equipe_nome=eq?eq.nome:null;
     sireNome = eq? ("Equipe "+eq.nome) : "Equipe";
-  } else {
+  } else if(!implante){
     sireId=v("rp_touro").value||null;
     const nm=v("rp_tnome")?v("rp_tnome").value.trim():"";
     let selNome=nm;
@@ -1231,15 +1237,23 @@ async function salvarReproducao(animalId,ciclo){
   const { data:novo, error } = await sb.from("reproducao").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
   const repId=novo[0].id;
-  if(sireId) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_id:sireId});
-  else if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
-  toast(dg==="prenhe"?"Prenhez registrada!": dg==="vazia"?"Registrada como vazia.":"Cobertura registrada. Aguardando diagnóstico.", dg==="vazia"?"":"ok");
+  if(!implante){
+    if(sireId) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_id:sireId});
+    else if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
+  }
+  toast(implante?"Implante registrado. Aguardando diagnóstico.": dg==="prenhe"?"Prenhez registrada!": "Registrada como vazia.", dg==="vazia"?"":"ok");
   buscarAnimalOp();
 }
 function flowDiagnostico(a,c){
+  const implante = !c.tipo;
+  const titulo = implante
+    ? `Implante — <span class="tag proc">aguardando diagnóstico</span>`
+    : `Registro nº ${c.ciclo} — ${tipoCob(c.tipo)} · <span class="tag proc">aguardando diagnóstico</span>`;
+  const cobLine = implante ? `<div class="muted" style="margin-top:6px">Implante registrado — sem touro/equipe atribuídos.</div>`
+    : `<div class="muted" style="margin-top:6px">Cobertura: ${coberturaTxt(c)} · ${fmtDate(c.data_cobertura)}</div>`;
   return `<div class="flowbox">
-    <b>Registro nº ${c.ciclo} — ${tipoCob(c.tipo)} · <span class="tag proc">aguardando diagnóstico</span></b>
-    <div class="muted" style="margin-top:6px">Cobertura: ${coberturaTxt(c)} · ${fmtDate(c.data_cobertura)}</div>
+    <b>${titulo}</b>
+    ${cobLine}
     <div class="grid" style="margin-top:10px">
       <div class="field"><label>Data do diagnóstico</label><input id="rp_ddiag2" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
