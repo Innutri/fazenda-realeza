@@ -1606,6 +1606,36 @@ async function gerarRelatorio(){
   const p12=(x)=> n12? Math.round(x/n12*100):0;
   const pctPren12 = p12(s12.prenhe);
 
+  // ---- Etapa 1: índices reprodutivos práticos ----
+  const ultimoRepro=(fid)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+  // 1) Taxa de prenhez sobre expostas
+  const expostas=(rp.prenhes||0)+(rp.vazias||0)+(rp.em_processo||0);
+  const taxaPrenhez=expostas?Math.round(rp.prenhes/expostas*100):0;
+  // prenhas atuais (com o registro de prenhez)
+  const prenhasRecs=[];
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)) prenhasRecs.push({f,r:u}); });
+  const totPrenhas=prenhasRecs.length;
+  // 2) por método
+  let mIatf=0,mTouro=0; prenhasRecs.forEach(x=>{ if(x.r.tipo==="iatf") mIatf++; else mTouro++; });
+  const pIatf=totPrenhas?Math.round(mIatf/totPrenhas*100):0; const pTouro=totPrenhas?100-pIatf:0;
+  // 3) por categoria
+  const catRep={bezerra:{exp:0,pren:0},novilha:{exp:0,pren:0},vaca:{exp:0,pren:0}};
+  femeasAtivas.forEach(f=>{ const c=categoriaAnimal(f); if(!catRep[c]) return; const u=ultimoRepro(f.id); if(u){ catRep[c].exp++; if(u.fase==="prenhe"||u.resultado_prenhez===true) catRep[c].pren++; } });
+  // 4) distribuição na estação (data da monta; diagnóstico quando ausente)
+  const tercos=[0,0,0]; let semDataMonta=0, estIni=null, estFim=null;
+  const refs=prenhasRecs.map(x=>{ const d=x.r.data_cobertura||x.r.data_diagnostico; return d?new Date(d).getTime():null; });
+  const refsOk=refs.filter(t=>t!=null); semDataMonta=refs.filter(t=>t==null).length;
+  if(refsOk.length){ const min=Math.min(...refsOk), max=Math.max(...refsOk); estIni=min; estFim=max; const span=max-min;
+    refsOk.forEach(t=>{ let idx=span>0?Math.min(2,Math.floor((t-min)/span*3)):0; tercos[idx]++; }); }
+  const totTercos=tercos[0]+tercos[1]+tercos[2]; const pt=(x)=> totTercos?Math.round(x/totTercos*100):0;
+  const dISO=(ms)=> new Date(ms).toISOString().slice(0,10);
+  // 5) lista de descarte consolidada
+  const descarte=[];
+  femeasAtivas.forEach(f=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id); const u=ultimoRepro(f.id);
+    const vazia=u && (u.fase==="vazia"||u.resultado_prenhez===false); const iv=intervaloVazias6m(cs);
+    if(vazia||iv.ok) descarte.push({f, motivo: iv.ok?"Vazia repetida (2+ em 6 meses)":"Vazia", cat:categoriaAnimal(f), idade:idadeTxt(f.data_nascimento), data: u?(u.data_diagnostico||u.data_cobertura):null}); });
+  descarte.sort((a,b)=>(a.f.numero||0)-(b.f.numero||0));
+
   body.innerHTML=`
     <div class="card">
       <h3>Rebanho — visão geral</h3>
@@ -1666,30 +1696,67 @@ async function gerarRelatorio(){
     </div>
 
     <div class="card">
-      <h3>Reprodução das fêmeas</h3>
-      <div class="kpis" style="margin-bottom:14px">
+      <h3>Taxa de prenhez (sobre fêmeas expostas)</h3>
+      <p class="muted">Fêmeas <b>expostas</b> = as que entraram em reprodução (têm registro). As "sem registro" não entraram nesta estação e não contam na taxa.</p>
+      <div class="bar" style="margin:10px 0 14px">
+        ${expostas&&taxaPrenhez?`<div class="seg pr" style="width:${taxaPrenhez}%">${taxaPrenhez}% prenhas</div>`:""}
+        ${expostas&&(100-taxaPrenhez)?`<div class="seg vz" style="width:${100-taxaPrenhez}%">${100-taxaPrenhez}%</div>`:""}
+        ${!expostas?`<div class="seg" style="width:100%;background:#ccc;color:#555">nenhuma fêmea exposta</div>`:""}
+      </div>
+      <div class="kpis">
+        <div class="kpi gold"><div class="n">${taxaPrenhez}%</div><div class="l">Taxa de prenhez (${rp.prenhes} de ${expostas} expostas)</div></div>
         <div class="kpi"><div class="n" style="color:var(--ok)">${rp.prenhes}</div><div class="l">Prenhas</div></div>
         <div class="kpi"><div class="n" style="color:var(--erro)">${rp.vazias}</div><div class="l">Vazias</div></div>
         <div class="kpi"><div class="n" style="color:var(--ouro)">${rp.em_processo}</div><div class="l">Em processo</div></div>
-        <div class="kpi"><div class="n" style="color:var(--txt2)">${rp.sem_registro}</div><div class="l">Sem registro</div></div>
       </div>
-      <div class="muted">Comparativo prenhas × vazias (sobre ${basePr} fêmeas diagnosticadas)</div>
-      <div class="bar">
-        ${pctPr?`<div class="seg pr" style="width:${pctPr}%">${pctPr}%</div>`:""}
-        ${pctVz?`<div class="seg vz" style="width:${pctVz}%">${pctVz}%</div>`:""}
-        ${!basePr?`<div class="seg" style="width:100%;background:#ccc;color:#555">sem diagnósticos</div>`:""}
-      </div>
-      <div style="margin-top:16px" class="kpis">
-        <div class="kpi"><div class="n">${rp.com_2_ou_mais_ciclos}</div><div class="l">Fêmeas com 2+ ciclos de reprodução</div></div>
-        <div class="kpi"><div class="n">${pctProc}%</div><div class="l">Fêmeas em processo</div></div>
-      </div>
+      <p class="muted" style="margin-top:10px">${rp.sem_registro} fêmeas sem registro (não expostas nesta estação).</p>
     </div>
 
     <div class="card">
-      <h3>Fêmeas com 2 ou mais ciclos (menos de 6 meses de intervalo) — vazias repetidas</h3>
-      <p class="muted">Fêmeas que passaram pelo curral 2 vezes num intervalo de até 6 meses e confirmaram VAZIA nas duas — candidatas a descarte. (${repProblema.length})</p>
-      <div style="overflow-x:auto"><table><thead><tr><th>Nº</th><th>Categoria</th><th>Vazias no período</th><th>1ª vazia</th><th>Última vazia</th><th>Intervalo</th></tr></thead>
-      <tbody>${repProblema.length? repProblema.map(p=>`<tr><td><b>${p.f.numero??"—"}</b></td><td>${esc(categoriaAnimal(p.f))||"—"}</td><td>${p.nvazias}</td><td>${fmtDate(p.iv.de)}</td><td>${fmtDate(p.iv.ate)}</td><td><span class="tag vazia">${p.iv.meses} meses</span></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Nenhuma fêmea com 2 vazias em até 6 meses.</td></tr>`}</tbody></table></div>
+      <h3>Prenhez por método (IATF × monta natural)</h3>
+      ${totPrenhas?`
+      <div class="kpis">
+        <div class="kpi"><div class="n" style="color:var(--verde2)">${mIatf}</div><div class="l">IATF (${pIatf}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${mTouro}</div><div class="l">Monta natural / touro (${pTouro}%)</div></div>
+        <div class="kpi"><div class="n">${totPrenhas}</div><div class="l">Total de prenhas</div></div>
+      </div>
+      <div class="bar" style="margin-top:12px">
+        ${pIatf?`<div class="seg" style="width:${pIatf}%;background:var(--verde2)">${pIatf}%</div>`:""}
+        ${pTouro?`<div class="seg" style="width:${pTouro}%;background:var(--ouro);color:#3a2c00">${pTouro}%</div>`:""}
+      </div>`:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
+    </div>
+
+    <div class="card">
+      <h3>Prenhez por categoria (novilhas × vacas)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Categoria</th><th>Expostas</th><th>Prenhas</th><th>Taxa de prenhez</th></tr></thead>
+      <tbody>${['novilha','vaca','bezerra'].map(c=>{const d=catRep[c]; if(!d.exp&&!d.pren) return ""; const tx=d.exp?Math.round(d.pren/d.exp*100):0; return `<tr><td><span class="tag femea">${c}</span></td><td>${d.exp}</td><td>${d.pren}</td><td><b>${tx}%</b></td></tr>`;}).join("")||`<tr><td colspan="4" class="empty">Sem dados.</td></tr>`}</tbody></table></div>
+      <p class="muted" style="margin-top:8px">Novilhas de 1º serviço costumam ter taxa menor que vacas — acompanhar separado ajuda no manejo.</p>
+    </div>
+
+    <div class="card">
+      <h3>Distribuição da prenhez na estação</h3>
+      ${totTercos?`
+      <p class="muted">Período: ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))} — por data da monta (usa o diagnóstico quando a monta não foi informada).</p>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n" style="color:var(--ok)">${tercos[0]}</div><div class="l">1º terço (${pt(tercos[0])}%)</div></div>
+        <div class="kpi"><div class="n">${tercos[1]}</div><div class="l">2º terço (${pt(tercos[1])}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${tercos[2]}</div><div class="l">3º terço (${pt(tercos[2])}%)</div></div>
+      </div>
+      <p class="muted" style="margin-top:10px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data não entraram.)`:""}</p>
+      `:`<p class="muted">Ainda não dá para distribuir — informe a data da monta das prenhas.${semDataMonta?` (${semDataMonta} prenha(s) sem data.)`:""}</p>`}
+    </div>
+
+    <div class="card">
+      <h3>Lista de descarte (candidatas)</h3>
+      <p class="muted">Fêmeas <b>vazias</b> e <b>repetidoras</b> (2+ vazias em até 6 meses) — candidatas a descarte. Total: ${descarte.length}.</p>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Idade</th><th>Motivo</th><th>Última info</th></tr></thead>
+      <tbody>${descarte.length? descarte.map(d=>`<tr>
+        <td data-label="Nº"><b>${d.f.numero??"—"}</b></td>
+        <td data-label="Categoria">${esc(d.cat)||"—"}</td>
+        <td data-label="Idade">${d.idade}</td>
+        <td data-label="Motivo"><span class="tag vazia">${d.motivo}</span></td>
+        <td data-label="Última info">${d.data?fmtDate(d.data):"—"}</td>
+      </tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea candidata a descarte no momento.</td></tr>`}</tbody></table></div>
     </div>`;
 }
 
