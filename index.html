@@ -1279,6 +1279,17 @@ function renderUltimosRegistros(){
     <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Quando</th><th>Tipo</th><th>Descrição</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
+function intervaloVazias6m(ciclos){
+  // datas em que a fêmea foi confirmada VAZIA
+  const vz=(ciclos||[]).filter(c=>c.resultado_prenhez===false)
+    .map(c=>c.data_diagnostico||c.data_cobertura||((c.created_at||"").slice(0,10)))
+    .filter(Boolean).sort();
+  for(let i=0;i<vz.length;i++) for(let j=i+1;j<vz.length;j++){
+    const meses=(new Date(vz[j])-new Date(vz[i]))/(1000*60*60*24*30.44);
+    if(meses<=6) return {ok:true, de:vz[i], ate:vz[j], meses:Math.round(meses*10)/10};
+  }
+  return {ok:false};
+}
 async function gerarRelatorio(){
   const body=$("#rel-body");
   const [ct, fx, rr, ci] = await Promise.all([
@@ -1306,6 +1317,14 @@ async function gerarRelatorio(){
   const pctPr=basePr?Math.round(rp.prenhes/basePr*100):0;
   const pctVz=basePr?100-pctPr:0;
   const pctProc = rp.total_femeas? Math.round(rp.em_processo/rp.total_femeas*100):0;
+
+  // Fêmeas com 2+ vazias num intervalo de até 6 meses (repeat breeders / descarte)
+  const repProblema = [];
+  LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea").forEach(f=>{
+    const ciclos = LOCAL.reproducao.filter(r=>r.animal_id===f.id);
+    const iv = intervaloVazias6m(ciclos);
+    if(iv.ok) repProblema.push({f, iv, nvazias: ciclos.filter(c=>c.resultado_prenhez===false).length});
+  });
 
   body.innerHTML=`
     <div class="card">
@@ -1366,9 +1385,10 @@ async function gerarRelatorio(){
     </div>
 
     <div class="card">
-      <h3>Fêmeas com 2 ou mais ciclos</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th>Nº</th><th>Categoria</th><th>Total ciclos</th><th>Confirmados</th><th>Situação atual</th></tr></thead>
-      <tbody>${(ci.data||[]).length? (ci.data).map(f=>`<tr><td><b>${f.numero??"—"}</b></td><td>${esc(categoriaAnimal(LOCAL.animais.find(x=>x.id===f.animal_id)))||"—"}</td><td>${f.total_ciclos}</td><td>${f.ciclos_confirmados}</td><td>${f.situacao==="prenhe"?'<span class="tag prenhe">prenha</span>':f.situacao==="vazia"?'<span class="tag vazia">vazia</span>':f.situacao==="parida"?'<span class="tag proc">parida</span>':'<span class="tag proc">'+esc(f.ultima_fase||'em processo')+'</span>'}</td></tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea com 2+ ciclos ainda.</td></tr>`}</tbody></table></div>
+      <h3>Fêmeas com 2 ou mais ciclos (menos de 6 meses de intervalo) — vazias repetidas</h3>
+      <p class="muted">Fêmeas que passaram pelo curral 2 vezes num intervalo de até 6 meses e confirmaram VAZIA nas duas — candidatas a descarte. (${repProblema.length})</p>
+      <div style="overflow-x:auto"><table><thead><tr><th>Nº</th><th>Categoria</th><th>Vazias no período</th><th>1ª vazia</th><th>Última vazia</th><th>Intervalo</th></tr></thead>
+      <tbody>${repProblema.length? repProblema.map(p=>`<tr><td><b>${p.f.numero??"—"}</b></td><td>${esc(categoriaAnimal(p.f))||"—"}</td><td>${p.nvazias}</td><td>${fmtDate(p.iv.de)}</td><td>${fmtDate(p.iv.ate)}</td><td><span class="tag vazia">${p.iv.meses} meses</span></td></tr>`).join("") : `<tr><td colspan="6" class="empty">Nenhuma fêmea com 2 vazias em até 6 meses.</td></tr>`}</tbody></table></div>
     </div>`;
 }
 
