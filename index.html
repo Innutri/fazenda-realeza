@@ -1645,6 +1645,13 @@ async function gerarRelatorio(){
     if(estacaoValida) refsOk.forEach(t=>{ let idx=Math.min(2,Math.floor((t-min)/span*3)); tercos[idx]++; }); }
   // composição real do plantel prenhe por método
   const compIatf=mIatf, compMonta=mTouro;
+  // distribuição da prenhez por CICLO (ordem do serviço: 1º = 1ª IA/monta, 2º = repasse, ...)
+  const ciclos=[0,0,0]; const ciclosNums=[[],[],[]];
+  prenhasRecs.forEach(x=>{ let c=parseInt(x.r.ciclo); if(!c||c<1) c=1; const idx=Math.min(2,c-1); ciclos[idx]++; if(x.f.numero!=null) ciclosNums[idx].push(x.f.numero); });
+  ciclosNums.forEach(a=>a.sort((p,q)=>p-q));
+  const totCiclos=ciclos[0]+ciclos[1]+ciclos[2];
+  const pcc=(x)=> totCiclos?Math.round(x/totCiclos*100):0;
+  const cicloLbl=["1º ciclo","2º ciclo","3º ciclo ou +"];
   const totTercos=tercos[0]+tercos[1]+tercos[2]; const pt=(x)=> totTercos?Math.round(x/totTercos*100):0;
   const dISO=(ms)=> new Date(ms).toISOString().slice(0,10);
   // 5) lista de descarte consolidada
@@ -1786,22 +1793,37 @@ async function gerarRelatorio(){
     </div>
 
     <div class="card">
-      <h3>Distribuição da prenhez na estação</h3>
+      <h3>Prenhez por ciclo</h3>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n" style="color:var(--ok)">${ciclos[0]}</div><div class="l">1º ciclo (${pcc(ciclos[0])}%)</div></div>
+        <div class="kpi"><div class="n">${ciclos[1]}</div><div class="l">2º ciclo (${pcc(ciclos[1])}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${ciclos[2]}</div><div class="l">3º ciclo+ (${pcc(ciclos[2])}%)</div></div>
+      </div>
+      <p class="muted" style="margin-top:8px">Ciclo = ordem do serviço reprodutivo (1º = primeira IA/monta, 2º = repasse, e assim por diante). Quanto mais prenhez no 1º ciclo, melhor a eficiência.</p>
+      ${[0,1,2].map(i=> ciclos[i]? `
+      <details class="exp" ${ciclos[i]>20?"":"open"} style="margin-top:10px">
+        <summary>${cicloLbl[i]} — ${ciclos[i]} prenha(s)</summary>
+        <div class="exp-body"><div class="numchips">${ciclosNums[i].map(n=>`<span class="numchip">${n}</span>`).join("")||`<span class="muted">sem número cadastrado</span>`}</div></div>
+      </details>`:``).join("")}
+
+      <div style="margin-top:14px;border-top:1px solid var(--linha);padding-top:12px">
+        <div class="muted" style="font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-size:12px">Composição por método</div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" style="color:var(--verde2)">${compIatf}</div><div class="l">IATF — precoces de 1ª cria</div></div>
+          <div class="kpi"><div class="n">${compMonta}</div><div class="l">Monta natural</div></div>
+        </div>
+      </div>
+
       ${estacaoValida?`
-      <p class="muted">Período: ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))} — por data da monta/IATF.</p>
-      <div class="kpis" style="margin-top:6px">
-        <div class="kpi"><div class="n" style="color:var(--ok)">${tercos[0]}</div><div class="l">1º terço (${pt(tercos[0])}%)</div></div>
-        <div class="kpi"><div class="n">${tercos[1]}</div><div class="l">2º terço (${pt(tercos[1])}%)</div></div>
-        <div class="kpi"><div class="n" style="color:var(--txt2)">${tercos[2]}</div><div class="l">3º terço (${pt(tercos[2])}%)</div></div>
-      </div>
-      <p class="muted" style="margin-top:10px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data de monta não entraram.)`:""}</p>
-      `:`
-      <p class="muted">Ainda não há dispersão de datas para dividir em terços — a estação está concentrada em uma única data de manejo. Composição atual das prenhas por método:</p>
-      <div class="kpis" style="margin-top:6px">
-        <div class="kpi"><div class="n" style="color:var(--verde2)">${compIatf}</div><div class="l">IATF — precoces de 1ª cria</div></div>
-        <div class="kpi"><div class="n">${compMonta}</div><div class="l">Monta natural</div></div>
-      </div>
-      <p class="muted" style="margin-top:10px">A divisão em 1º/2º/3º terço aparece automaticamente quando as montas tiverem datas espalhadas ao longo da estação.</p>`}
+      <div style="margin-top:14px;border-top:1px solid var(--linha);padding-top:12px">
+        <div class="muted" style="font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-size:12px">Distribuição na estação — ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))}</div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" style="color:var(--ok)">${tercos[0]}</div><div class="l">1º terço (${pt(tercos[0])}%)</div></div>
+          <div class="kpi"><div class="n">${tercos[1]}</div><div class="l">2º terço (${pt(tercos[1])}%)</div></div>
+          <div class="kpi"><div class="n" style="color:var(--txt2)">${tercos[2]}</div><div class="l">3º terço (${pt(tercos[2])}%)</div></div>
+        </div>
+        <p class="muted" style="margin-top:8px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data de monta não entraram.)`:""}</p>
+      </div>`:``}
     </div>
 
     <div class="card">
