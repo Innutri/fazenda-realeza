@@ -26,8 +26,6 @@
   .dot{width:9px;height:9px;border-radius:50%;background:#8a8;display:inline-block}
   .dot.on{background:#7CFC9A;box-shadow:0 0 6px #7CFC9A}
   .dot.off{background:#ff8a8a}
-  .switch{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px;user-select:none}
-  .switch input{accent-color:var(--ouro);width:15px;height:15px}
   .databar{max-width:1080px;margin:-8px auto 40px;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--linha);border-radius:12px;box-shadow:var(--shadow)}
   .databar .db-title{font-weight:700;color:var(--verde)}
   .databar .db-hint{font-size:12px;color:var(--txt2);flex-basis:100%;margin-top:2px}
@@ -120,10 +118,6 @@
   .flowbox.desmame b{color:#8a5a12}
   .criacard{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--linha);border-radius:8px;padding:10px 12px;margin-top:10px}
   .criacard .big{font-size:22px;font-weight:800;color:var(--verde)}
-  .flowsteps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-  .flowstep{flex:1;min-width:90px;text-align:center;padding:8px;border-radius:8px;background:#f0f2ee;color:var(--txt2);font-size:12px;font-weight:600}
-  .flowstep.done{background:#e1f4e6;color:var(--ok)}
-  .flowstep.cur{background:var(--verde2);color:#fff}
   .inline-list{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px}
   .inline-list li{background:#f6f8f5;border:1px solid var(--linha);padding:6px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
   .divider{height:1px;background:var(--linha);margin:16px 0}
@@ -267,6 +261,7 @@ function xhrFetch(url, opts){
         json:function(){ return Promise.resolve(body?JSON.parse(body):null); }
       });
     };
+    xhr.timeout=20000; // 20s: sinal fraco não deixa o app pendurado pra sempre
     xhr.onerror=function(){ reject(new TypeError("Network request failed")); };
     xhr.ontimeout=function(){ reject(new TypeError("Network request timed out")); };
     xhr.send(opts.body!==undefined?opts.body:null);
@@ -427,20 +422,35 @@ async function carregarDoSupabase(){
 }
 function msgErro(e){
   if(!e) return "falha de rede";
-  return e.message || e.error_description || e.details || e.hint || (typeof e==="string"?e:JSON.stringify(e));
+  const m = e.message || e.error_description || e.details || e.hint || (typeof e==="string"?e:JSON.stringify(e));
+  if(/network request|failed to fetch|networkerror|timed out|load failed/i.test(m)) return "sem internet ou sinal fraco no celular";
+  return m;
 }
+let _reconTimer=null, _reconSeg=8;
+function _pararReconexao(){ if(_reconTimer){ clearInterval(_reconTimer); _reconTimer=null; } }
 function renderErroConexao(){
   const el=$("#save-indicator"); if(el){ el.textContent="offline"; el.className="saveind mem"; }
   app.innerHTML=`<div class="card placeholder">
-    <div class="ic">☁️</div>
-    <h2>Não foi possível conectar ao banco agora</h2>
-    <p class="muted">O Supabase não respondeu (${esc(msgErro(_lastErr))}). Isso costuma ser temporário — tente de novo.</p>
-    <div class="actions" style="justify-content:center;margin-top:10px"><button class="btn" onclick="iniciarApp()">Tentar novamente</button></div>
+    <div class="ic">📶</div>
+    <h2>Sem conexão com a internet</h2>
+    <p class="muted">${esc(msgErro(_lastErr))}. Os dados estão seguros na nuvem — nada foi perdido.<br>
+    Vou tentar reconectar sozinho: <b id="recon-seg">${_reconSeg}</b>s…</p>
+    <div class="actions" style="justify-content:center;margin-top:10px"><button class="btn" onclick="iniciarApp()">Tentar agora</button></div>
   </div>`;
+  _pararReconexao();
+  let s=_reconSeg;
+  _reconTimer=setInterval(()=>{
+    s--;
+    const c=document.getElementById("recon-seg"); if(c) c.textContent=s;
+    if(s<=0){ _pararReconexao(); _reconSeg=Math.min(_reconSeg*2,60); iniciarApp(); }
+  },1000);
 }
+// Quando o Android avisar que a internet voltou, reconecta na hora:
+window.addEventListener("online", ()=>{ if(!_online){ _pararReconexao(); _reconSeg=8; iniciarApp(); } });
 async function iniciarApp(){
+  _pararReconexao();
   const el=$("#save-indicator"); if(el){ el.innerHTML='<span class="pulse"></span>carregando…'; el.className="saveind saving"; }
-  try{ await carregarDoSupabase(); _online=true; _lastErr=null; }
+  try{ await carregarDoSupabase(); _online=true; _lastErr=null; _reconSeg=8; }
   catch(e){ _online=false; _lastErr=e; console.error("Supabase:", msgErro(e), e); }
   checkConn();
   if(_online){ if(el){ el.textContent="pronto"; el.className="saveind"; } render(); }
@@ -457,27 +467,75 @@ function toast(msg, type=""){
   clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
 }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-// Ponte da balança (APK Android): o app nativo chama window.balancaPeso(peso, eid) ao ler a balança
-window.__ultimoPesoBalanca = null;
-window.balancaPeso = function(peso, eid){
-  try{
-    peso = (""+peso).replace(",",".");
-    window.__ultimoPesoBalanca = peso;
-    window.__balStatus = window.__balStatus || {}; window.__balStatus.ultimoPeso = peso; window.__balStatus.conectado = true;
-    const _bl = document.getElementById("bal-live"); if(_bl) _bl.innerHTML = _balLiveHtml(window.__balStatus);
-    const p = document.getElementById("mo_peso");
-    if(p){
-      p.value = peso;
-      try{ p.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
-      p.style.transition="background .3s";
-      p.style.background="#e1f4e6";
-      setTimeout(()=>{ p.style.background=""; }, 1500);
-      if(typeof toast==="function") toast("Peso da balança: "+peso+" kg","ok");
-    } else {
-      if(typeof toast==="function") toast("Peso "+peso+" kg recebido — abra o animal para registrar.","ok");
-    }
-  }catch(e){}
-};
+// ============================================================
+// MÓDULO BALANÇA — toda a conexão com a XR5000 vive aqui
+// ------------------------------------------------------------
+// Independente do resto do app. O APK (parte nativa) só conhece
+// 2 funções globais, registradas por este módulo:
+//   window.balancaPeso(peso, eid)  -> chamada quando um peso é gravado
+//   window.balancaStatus(json)     -> chamada quando o status muda
+// E injeta window.BalancaNativo { presente(), status(), conectar() }.
+// O app NUNCA fala com a balança direto: ele se inscreve com
+// Balanca.onPeso(fn) e Balanca.onStatus(fn). Para trocar de
+// balança no futuro, basta trocar este módulo.
+// ============================================================
+const Balanca = (function(){
+  let st = { conectado:false, ultimoPeso:null, modo:null };
+  const subsPeso = [], subsStatus = [];
+  let pollId = null;
+
+  function bridge(){ try{ return (window.BalancaNativo && window.BalancaNativo.presente()) ? window.BalancaNativo : null; }catch(e){ return null; } }
+  function emitStatus(){ const s = Object.assign({}, st); subsStatus.forEach(f=>{ try{ f(s); }catch(e){} }); }
+  function setStatus(s){
+    try{ s = (typeof s === "string") ? JSON.parse(s) : (s || {}); }catch(e){ s = { texto:String(s) }; }
+    st = Object.assign({}, st, s);
+    emitStatus();
+  }
+
+  // Chamadas vindas do APK — nomes fixos, NÃO renomear:
+  window.balancaPeso = function(peso, _eid){
+    try{
+      peso = ("" + peso).replace(",", ".");
+      st.ultimoPeso = peso; st.conectado = true;
+      subsPeso.forEach(f=>{ try{ f(peso); }catch(e){} });
+      emitStatus();
+    }catch(e){}
+  };
+  window.balancaStatus = setStatus;
+
+  return {
+    nativa(){ return !!bridge(); },                      // estamos dentro do APK?
+    status(){ return Object.assign({}, st); },           // cópia do estado atual
+    onPeso(f){ subsPeso.push(f); },                      // assinar: chegou peso
+    onStatus(f){ subsStatus.push(f); },                  // assinar: mudou status
+    verificar(){ const b = bridge(); if(b){ try{ setStatus(b.status()); }catch(e){} } return !!b; },
+    conectar(){ const b = bridge(); if(b){ try{ b.conectar(); }catch(e){} } return !!b; },
+    iniciarPoll(ms){
+      Balanca.pararPoll();
+      pollId = setInterval(()=>{
+        if(document.hidden) return;                                  // em segundo plano: não gasta bateria
+        if(!document.getElementById("bal-live")) return Balanca.pararPoll(); // saiu da aba Balança
+        Balanca.verificar();
+      }, ms || 2000);
+    },
+    pararPoll(){ if(pollId){ clearInterval(pollId); pollId = null; } }
+  };
+})();
+
+// ---- Ligação do APP com a balança (o ÚNICO ponto de contato) ----
+Balanca.onStatus(s=>{ const el = document.getElementById("bal-live"); if(el) el.innerHTML = _balLiveHtml(s); });
+Balanca.onPeso(peso=>{
+  const p = document.getElementById("mo_peso");
+  if(p){
+    p.value = peso;
+    try{ p.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+    p.style.transition = "background .3s"; p.style.background = "#e1f4e6";
+    setTimeout(()=>{ p.style.background = ""; }, 1500);
+    toast("Peso da balança: " + peso + " kg", "ok");
+  } else {
+    toast("Peso " + peso + " kg recebido — abra o animal para registrar.", "ok");
+  }
+});
 function fmtDate(d){ if(!d) return "—"; const p=d.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
 function idadeMeses(d){ if(!d) return null; const n=new Date(), b=new Date(d); return (n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth()); }
 function idadeTxt(d){ const m=idadeMeses(d); if(m===null) return "—"; const a=Math.floor(m/12), r=m%12; return a>0?`${a}a ${r}m`:`${m}m`; }
@@ -1082,55 +1140,6 @@ async function buscarAnimalOp(){
   if(data.tipo==="femea") return opFemea(data);
   return opMachoTouro(data);
 }
-
-async function lerBalancaBLE(){
-  const logEl=document.getElementById("bal-log");
-  const log=(m)=>{ if(logEl){ logEl.style.display="block"; logEl.textContent+=(logEl.textContent?"\n":"")+m; logEl.scrollTop=logEl.scrollHeight; } };
-  const parseNum=(t)=>{ const m=String(t).match(/-?\d+(?:[.,]\d+)?/); return m?parseFloat(m[0].replace(",",".")):null; };
-  const setPeso=(v)=>{ const inp=document.getElementById("mo_peso"); if(inp){ inp.value=v; inp.style.background="#c8f5d0"; } toast("Peso lido: "+v+" kg","ok"); log("==> PESO: "+v+" kg"); };
-  if(!navigator.bluetooth){ toast("Bluetooth não suportado aqui. Use o Chrome no Android.","err"); log("navigator.bluetooth indisponível — use Chrome no Android."); return; }
-  try{
-    log("Escolha a balança na lista…");
-    const dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true, optionalServices:[0x181D,0xFFE0,0xFFF0,0xFEE0,"6e400001-b5a3-f393-e0a9-e50e24dcca9e"]});
-    log("Conectando: "+(dev.name||"dispositivo")+"…");
-    const server=await dev.gatt.connect();
-    dev.addEventListener('gattserverdisconnected',()=>log("Balança desconectada."));
-    // 1) padrão Bluetooth de balança (Weight Scale 0x181D / 0x2A9D)
-    try{
-      const s=await server.getPrimaryService(0x181D);
-      const c=await s.getCharacteristic(0x2A9D);
-      await c.startNotifications();
-      c.addEventListener('characteristicvaluechanged',e=>{ const d=e.target.value; const f=d.getUint8(0); const raw=d.getUint16(1,true); const kg=(f&1)?raw*0.01*0.453592:raw*0.005; setPeso(Math.round(kg*10)/10); });
-      log("Conectado (balança padrão). Pese o animal.");
-      return;
-    }catch(_){ log("(sem serviço padrão de balança — tentando modo serial/geral)"); }
-    // 2) modo geral: escuta os canais conhecidos que notificam
-    const svcs=await server.getPrimaryServices();
-    let achou=false;
-    for(const s of svcs){
-      let chars=[]; try{ chars=await s.getCharacteristics(); }catch(_){}
-      for(const c of chars){
-        if(c.properties.notify||c.properties.indicate){
-          try{
-            await c.startNotifications(); achou=true;
-            c.addEventListener('characteristicvaluechanged',e=>{
-              const d=e.target.value; let txt=""; try{txt=new TextDecoder().decode(d);}catch(_){}
-              const bytes=[]; for(let i=0;i<d.byteLength;i++) bytes.push(d.getUint8(i));
-              log("["+c.uuid.slice(4,8)+"] \""+txt.replace(/[\r\n]/g,"·")+"\" ["+bytes.join(" ")+"]");
-              const n=parseNum(txt); if(n!=null && n>0 && n<3000) setPeso(Math.round(n*10)/10);
-            });
-          }catch(_){}
-        }
-      }
-    }
-    if(achou) log("Conectado. Suba um animal na balança e observe o que aparece aqui.");
-    else log("Conectado, mas sem canal de dados reconhecido. Me mande o modelo/UUID (app nRF Connect) que eu adiciono.");
-  }catch(e){
-    const msg=e&&e.message?e.message:String(e);
-    log("Fim: "+msg);
-    if(!/cancel/i.test(msg)) toast("Bluetooth: "+msg,"err");
-  }
-}
 function blocoManejo(a){
   return `<div class="card">
       <h3>Registrar peso e sanidade</h3>
@@ -1211,11 +1220,6 @@ async function histManejo(animalId){
 
 // --------- REPRODUÇÃO (FÊMEA) ---------
 function tipoCob(t){ return t==="iatf"?"IATF":t==="touro"?"Touro (equipe)":"—"; }
-async function listaTourosOptions(){
-  // IATF usa sêmen de central — listar apenas touros de central, mostrando o nome
-  const { data:touros } = await sb.from("animais").select("*").eq("tipo","touro").eq("arquivado",false).eq("procedencia","central").order("numero");
-  return (touros||[]).map(t=>`<option value="${t.id}">${t.numero} — ${esc(t.nome||t.raca)||"touro"}</option>`).join("") || '<option value="">nenhum touro de central cadastrado</option>';
-}
 function listaEquipesOptions(){
   return (LOCAL.equipes||[]).map(e=>`<option value="${e.id}">${esc(e.nome)}${e.touros?(" — "+esc(e.touros)):""}</option>`).join("") || '<option value="">nenhuma equipe cadastrada</option>';
 }
@@ -1498,7 +1502,7 @@ function histReproducao(ciclos, editable){
 // ============================================================
 let BAL = null;
 function _balLiveHtml(s){
-  s = s || window.__balStatus || {};
+  s = s || Balanca.status();
   const on = !!s.conectado;
   const cor = on ? "var(--ok)" : "var(--txt2)";
   const txt = on ? ("Conectada"+(s.modo?(" ("+esc(s.modo)+")"):"")) : "Aguardando a balança conectar…";
@@ -1507,28 +1511,15 @@ function _balLiveHtml(s){
       <span style="width:16px;height:16px;border-radius:50%;background:${cor};display:inline-block"></span>
       <b style="color:${cor};font-size:16px">${txt}</b></div>${peso}`;
 }
-function balancaVerificar(){ try{ if(window.BalancaNativo){ window.balancaStatus(window.BalancaNativo.status()); toast("Status atualizado.","ok"); } }catch(e){} }
-function balancaConectar(){ try{ if(window.BalancaNativo){ window.BalancaNativo.conectar(); toast("Tentando conectar na balança…","ok"); } }catch(e){} }
-function iniciarPollBalanca(){
-  clearInterval(window.__balPoll);
-  window.__balPoll = setInterval(()=>{
-    try{
-      if(window.BalancaNativo && document.getElementById("bal-live")){ window.balancaStatus(window.BalancaNativo.status()); }
-      else { clearInterval(window.__balPoll); }
-    }catch(e){}
-  }, 2000);
-}
-window.balancaStatus = function(s){
-  try{ window.__balStatus = (typeof s==="string"? JSON.parse(s): s) || {}; }catch(e){ window.__balStatus = {texto:String(s)}; }
-  const el = document.getElementById("bal-live");
-  if(el) el.innerHTML = _balLiveHtml(window.__balStatus);
-};
+// Botões da tela (só repassam pro módulo Balanca):
+function balancaVerificar(){ if(Balanca.verificar()) toast("Status atualizado.","ok"); }
+function balancaConectar(){ if(Balanca.conectar()) toast("Tentando conectar na balança…","ok"); }
 function renderBalanca(){
-  const nativo = (typeof window.BalancaNativo!=="undefined") && (function(){ try{ return !!window.BalancaNativo.presente(); }catch(e){ return false; } })();
+  const nativo = Balanca.nativa();
   const liveCard = nativo ? `
   <div class="card">
     <h3>⚖️ Conexão com a balança (ao vivo)</h3>
-    <div id="bal-live">${_balLiveHtml(window.__balStatus)}</div>
+    <div id="bal-live">${_balLiveHtml(Balanca.status())}</div>
     <div class="actions" style="margin-top:10px">
       <button class="btn gold" type="button" onclick="balancaVerificar()">🔄 Verificar conexão</button>
       <button class="btn" type="button" onclick="balancaConectar()">Conectar / reconectar</button>
@@ -1537,7 +1528,7 @@ function renderBalanca(){
   </div>` : `
   <div class="card">
     <h3>⚖️ Conexão com a balança (ao vivo)</h3>
-    <p class="muted" style="font-size:15px;line-height:1.55">A conexão automática por Bluetooth funciona dentro do <b>app "Fazenda Realeza - Balança"</b> (APK Android). Você está no navegador comum — aqui use a <b>importação por arquivo</b> abaixo, ou abra pelo app. <a href="https://github.com/Innutri/fazenda-realeza/releases/tag/balanca-v3" target="_blank">Baixar o app</a>.</p>
+    <p class="muted" style="font-size:15px;line-height:1.55">A conexão automática por Bluetooth funciona dentro do <b>app "Fazenda Realeza - Balança"</b> (APK Android). Você está no navegador comum — aqui use a <b>importação por arquivo</b> abaixo, ou abra pelo app. <a href="https://github.com/Innutri/fazenda-realeza/releases/latest" target="_blank">Baixar o app</a>.</p>
   </div>`;
   app.innerHTML = liveCard + `
   <div class="card">
@@ -1566,7 +1557,7 @@ function renderBalanca(){
     <div id="bal-map"></div>
     <div id="bal-prev"></div>
   </div>`;
-  if(nativo){ balancaVerificar(); iniciarPollBalanca(); }
+  if(nativo){ Balanca.verificar(); Balanca.iniciarPoll(); }
 }
 function _balDetect(line){
   const c=[[';',line.split(';').length],[',',line.split(',').length],['\t',line.split('\t').length],[' ',line.trim().split(/\s+/).length]];
@@ -2073,7 +2064,6 @@ function erroInsert(error, numero){
 // MODAL / FICHA / EDIÇÃO
 // ============================================================
 let AUTOSAVE=true;
-function setAutosave(v){ AUTOSAVE=v; toast(v?"Auto-salvar ligado":"Auto-salvar desligado", v?"ok":""); }
 function abrirModal(html){ $("#modal").innerHTML=html; $("#modal-bg").classList.add("show"); }
 function fecharModal(){ $("#modal-bg").classList.remove("show"); }
 function fecharModalRender(){ fecharModal(); render(); }
