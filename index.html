@@ -457,6 +457,25 @@ function toast(msg, type=""){
   clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
 }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// Ponte da balança (APK Android): o app nativo chama window.balancaPeso(peso, eid) ao ler a balança
+window.__ultimoPesoBalanca = null;
+window.balancaPeso = function(peso, eid){
+  try{
+    peso = (""+peso).replace(",",".");
+    window.__ultimoPesoBalanca = peso;
+    const p = document.getElementById("mo_peso");
+    if(p){
+      p.value = peso;
+      try{ p.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
+      p.style.transition="background .3s";
+      p.style.background="#e1f4e6";
+      setTimeout(()=>{ p.style.background=""; }, 1500);
+      if(typeof toast==="function") toast("Peso da balança: "+peso+" kg","ok");
+    } else {
+      if(typeof toast==="function") toast("Peso "+peso+" kg recebido — abra o animal para registrar.","ok");
+    }
+  }catch(e){}
+};
 function fmtDate(d){ if(!d) return "—"; const p=d.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
 function idadeMeses(d){ if(!d) return null; const n=new Date(), b=new Date(d); return (n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth()); }
 function idadeTxt(d){ const m=idadeMeses(d); if(m===null) return "—"; const a=Math.floor(m/12), r=m%12; return a>0?`${a}a ${r}m`:`${m}m`; }
