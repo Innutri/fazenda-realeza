@@ -91,6 +91,11 @@
   .kpi .l{font-size:12px;color:var(--txt2);margin-top:2px}
   .kpi.gold .n{color:var(--ouro)}
 
+  html{scroll-behavior:smooth}
+  .relnav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  .relnav a{text-decoration:none;background:#eef5f0;border:1px solid var(--linha);color:var(--verde);font-size:12px;font-weight:700;padding:7px 12px;border-radius:20px;white-space:nowrap}
+  .relnav a:active,.relnav a:hover{background:var(--verde2);color:#fff}
+  .card[id]{scroll-margin-top:14px}
   .bar{height:22px;background:#eef1ec;border-radius:12px;overflow:hidden;display:flex;margin-top:6px}
   .bar .seg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
   .seg.pr{background:var(--ok)} .seg.vz{background:var(--erro)} .seg.pc{background:var(--ouro)}
@@ -170,7 +175,13 @@
     .actions .btn{width:100%;justify-content:center}
     .databar{flex-direction:column;align-items:stretch;text-align:center}
     .databar .btn{width:100%;justify-content:center}
-    .kpis{grid-template-columns:1fr 1fr}
+    .kpis{grid-template-columns:1fr 1fr;gap:8px}
+    .kpi{padding:12px 8px}
+    .kpi .n{font-size:24px}
+    .kpi .l{font-size:11px}
+    .bar{height:26px}
+    .bar .seg{font-size:12px}
+    .relnav{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;margin-bottom:10px}
     .modal{max-width:100%;border-radius:12px}
     .modal-foot{flex-direction:column-reverse}
     .modal-foot .btn{width:100%;justify-content:center}
@@ -1724,7 +1735,7 @@ async function gerarRelatorio(){
   // faixas
   const faixas={}; ["femea","macho","touro"].forEach(t=>faixas[t]={"0-12":0,"13-24":0,"25+":0,"sem_data":0});
   (fx.data||[]).forEach(r=>{ if(faixas[r.tipo]) faixas[r.tipo][r.faixa]=r.total; });
-  const linhaFx=t=>`<tr><td><span class="tag ${t}">${t}</span></td><td>${faixas[t]["0-12"]}</td><td>${faixas[t]["13-24"]}</td><td>${faixas[t]["25+"]}</td><td>${faixas[t]["sem_data"]}</td><td><b>${cont[t]}</b></td></tr>`;
+  const linhaFx=t=>`<tr><td data-label="Tipo"><span class="tag ${t}">${t}</span></td><td data-label="0–12 meses">${faixas[t]["0-12"]}</td><td data-label="13–24 meses">${faixas[t]["13-24"]}</td><td data-label="25+ meses">${faixas[t]["25+"]}</td><td data-label="Sem data">${faixas[t]["sem_data"]}</td><td data-label="Total"><b>${cont[t]}</b></td></tr>`;
 
   const rp=rr.data||{total_femeas:0,prenhes:0,vazias:0,paridas:0,em_processo:0,sem_registro:0,com_2_ou_mais_ciclos:0};
   const basePr=rp.prenhes+rp.vazias;
@@ -1832,7 +1843,19 @@ async function gerarRelatorio(){
   const concDTRows=Object.values(concDT).map(d=>({...d, tot:d.pren+d.vaz})).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:0);
 
   body.innerHTML=`
-    <div class="card">
+    <div class="relnav">
+      <a href="#rel-rebanho">🐄 Rebanho</a>
+      <a href="#rel-categorias">Categorias</a>
+      <a href="#rel-faixa">Idades</a>
+      <a href="#rel-repro">Reprodução</a>
+      <a href="#rel-taxa">Prenhez</a>
+      <a href="#rel-metodo">IATF × Monta</a>
+      <a href="#rel-ciclo">Ciclos</a>
+      <a href="#rel-conc">Touros</a>
+      <a href="#rel-partos">Partos</a>
+      <a href="#rel-descarte">Descarte</a>
+    </div>
+    <div class="card" id="rel-rebanho">
       <h3>Rebanho — visão geral</h3>
       <div class="kpis">
         <div class="kpi"><div class="n">${total}</div><div class="l">Total ativos</div></div>
@@ -1843,7 +1866,7 @@ async function gerarRelatorio(){
       ${centrais?`<p class="muted" style="margin-top:12px">🧬 ${centrais} touro(s) de central (sêmen) cadastrado(s) — usados na reprodução (IATF), mas <b>não contam</b> no rebanho físico.</p>`:""}
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-categorias">
       <h3>Categorias do rebanho (por idade)</h3>
       <div class="kpis">
         <div class="kpi"><div class="n">${cat.bezerra}</div><div class="l">Bezerras</div></div>
@@ -1863,13 +1886,13 @@ async function gerarRelatorio(){
       </p>
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-faixa">
       <h3>Faixa etária (distribuição por idade)</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th>Tipo</th><th>0–12 meses</th><th>13–24 meses</th><th>25+ meses</th><th>Sem data</th><th>Total</th></tr></thead>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Tipo</th><th>0–12 meses</th><th>13–24 meses</th><th>25+ meses</th><th>Sem data</th><th>Total</th></tr></thead>
       <tbody>${linhaFx("femea")}${linhaFx("macho")}${linhaFx("touro")}</tbody></table></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-repro">
       <h3>Estatística reprodutiva — fêmeas aptas (12 meses ou mais)</h3>
       <p class="muted">Base: fêmeas <b>ativas com 12 meses ou mais</b>, ou que <b>já estão em reprodução</b> (aceita animais mais novos por causa do cadastro inicial).${semData12?` <span style="color:var(--erro)">${semData12} sem data de nascimento e sem registro ficaram de fora.</span>`:""}</p>
       <div class="kpis" style="margin-top:6px">
@@ -1890,7 +1913,7 @@ async function gerarRelatorio(){
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-taxa">
       <h3>Taxa de prenhez (sobre fêmeas expostas)</h3>
       <p class="muted">Fêmeas <b>expostas</b> = as que entraram em reprodução (têm registro). As "sem registro" não entraram nesta estação e não contam na taxa.</p>
       <div class="bar" style="margin:10px 0 14px">
@@ -1907,7 +1930,7 @@ async function gerarRelatorio(){
       <p class="muted" style="margin-top:10px">${rp.sem_registro} fêmeas sem registro (não expostas nesta estação).</p>
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-metodo">
       <h3>Prenhez por método (IATF × monta natural)</h3>
       ${totPrenhas?`
       <div class="kpis">
@@ -1920,22 +1943,22 @@ async function gerarRelatorio(){
         ${pTouro?`<div class="seg" style="width:${pTouro}%;background:var(--ouro);color:#3a2c00">${pTouro}%</div>`:""}
       </div>
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">IATF — por touro (sêmen)</h4>
-      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
-      <tbody>${touroRows.length? touroRows.map(([nome,q])=>`<tr><td>${esc(nome)}</td><td><b>${q}</b></td><td>${mIatf?Math.round(q/mIatf*100):0}%</td><td>${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por IATF ainda.</td></tr>`}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
+      <tbody>${touroRows.length? touroRows.map(([nome,q])=>`<tr><td data-label="Touro (sêmen)"><b>${esc(nome)}</b></td><td data-label="Prenhas"><b>${q}</b></td><td data-label="% do método">${mIatf?Math.round(q/mIatf*100):0}%</td><td data-label="% do total">${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por IATF ainda.</td></tr>`}</tbody></table></div>
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Monta natural — por equipe de touro</h4>
-      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
-      <tbody>${equipeRows.length? equipeRows.map(([nome,q])=>`<tr><td>${nome==="Sem equipe"?"Sem equipe":("Equipe "+esc(nome))}</td><td><b>${q}</b></td><td>${mTouro?Math.round(q/mTouro*100):0}%</td><td>${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por monta natural ainda.</td></tr>`}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
+      <tbody>${equipeRows.length? equipeRows.map(([nome,q])=>`<tr><td data-label="Equipe"><b>${nome==="Sem equipe"?"Sem equipe":("Equipe "+esc(nome))}</b></td><td data-label="Prenhas"><b>${q}</b></td><td data-label="% do método">${mTouro?Math.round(q/mTouro*100):0}%</td><td data-label="% do total">${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por monta natural ainda.</td></tr>`}</tbody></table></div>
       `:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
     </div>
 
     <div class="card">
       <h3>Prenhez por categoria (novilhas × vacas)</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th>Categoria</th><th>Expostas</th><th>Prenhas</th><th>Taxa de prenhez</th></tr></thead>
-      <tbody>${['novilha','vaca','bezerra'].map(c=>{const d=catRep[c]; if(!d.exp&&!d.pren) return ""; const tx=d.exp?Math.round(d.pren/d.exp*100):0; return `<tr><td><span class="tag femea">${c}</span></td><td>${d.exp}</td><td>${d.pren}</td><td><b>${tx}%</b></td></tr>`;}).join("")||`<tr><td colspan="4" class="empty">Sem dados.</td></tr>`}</tbody></table></div>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Categoria</th><th>Expostas</th><th>Prenhas</th><th>Taxa de prenhez</th></tr></thead>
+      <tbody>${['novilha','vaca','bezerra'].map(c=>{const d=catRep[c]; if(!d.exp&&!d.pren) return ""; const tx=d.exp?Math.round(d.pren/d.exp*100):0; return `<tr><td data-label="Categoria"><span class="tag femea">${c}</span></td><td data-label="Expostas">${d.exp}</td><td data-label="Prenhas">${d.pren}</td><td data-label="Taxa de prenhez"><b>${tx}%</b></td></tr>`;}).join("")||`<tr><td colspan="4" class="empty">Sem dados.</td></tr>`}</tbody></table></div>
       <p class="muted" style="margin-top:8px">Novilhas de 1º serviço costumam ter taxa menor que vacas — acompanhar separado ajuda no manejo.</p>
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-ciclo">
       <h3>Prenhez por ciclo</h3>
       <div class="kpis" style="margin-top:6px">
         <div class="kpi"><div class="n" style="color:var(--ok)">${ciclos[0]}</div><div class="l">1º ciclo (${pcc(ciclos[0])}%)</div></div>
@@ -1969,12 +1992,12 @@ async function gerarRelatorio(){
       </div>`:``}
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-conc">
       <h3>Taxa de concepção por touro / sêmen</h3>
       <p class="muted">Sobre as fêmeas já diagnosticadas (prenhas + vazias) — prenhez × vazias por touro e por data.</p>
-      <div style="overflow-x:auto"><table style="table-layout:fixed;width:100%"><colgroup><col style="width:34%"><col style="width:16%"><col style="width:12%"><col style="width:12%"><col style="width:13%"><col style="width:13%"></colgroup>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:34%"><col style="width:16%"><col style="width:12%"><col style="width:12%"><col style="width:13%"><col style="width:13%"></colgroup>
       <thead><tr><th>Touro / Sêmen</th><th>Método</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
-      <tbody>${concTouroRows.length? concTouroRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td>${esc(d.nome)}</td><td>${metodoLabel(d.metodo)}</td><td><b style="color:var(--ok)">${d.pren}</b></td><td><b style="color:var(--erro)">${d.vaz}</b></td><td><b>${pp}%</b></td><td>${100-pp}%</td></tr>`;}).join("") : `<tr><td colspan="6" class="empty">Nenhum diagnóstico registrado ainda.</td></tr>`}</tbody></table></div>
+      <tbody>${concTouroRows.length? concTouroRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td data-label="Touro / Sêmen"><b>${esc(d.nome)}</b></td><td data-label="Método">${metodoLabel(d.metodo)}</td><td data-label="Prenhas"><b style="color:var(--ok)">${d.pren}</b></td><td data-label="Vazias"><b style="color:var(--erro)">${d.vaz}</b></td><td data-label="% Prenhez"><b>${pp}%</b></td><td data-label="% Vazia">${100-pp}%</td></tr>`;}).join("") : `<tr><td colspan="6" class="empty">Nenhum diagnóstico registrado ainda.</td></tr>`}</tbody></table></div>
       ${concDTRows.length?`<details class="exp" ${concDTRows.length>15?"":"open"}>
         <summary>Por data de diagnóstico (${concDTRows.length})</summary>
         <div class="exp-body" style="overflow:auto;max-height:360px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Data</th><th>Touro / Sêmen</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
@@ -1982,7 +2005,7 @@ async function gerarRelatorio(){
       </details>`:""}
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-partos">
       <h3>Previsão de partos</h3>
       <p class="muted">Calculada a partir da confirmação (diagnóstico): IATF + 225 dias · monta natural + 220 dias.</p>
       <div class="kpis">
@@ -1992,9 +2015,9 @@ async function gerarRelatorio(){
       </div>
       ${mesesParto.length?`
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Partos por mês</h4>
-      <div style="overflow-x:auto"><table><thead><tr><th>Mês</th><th>IATF</th><th>Monta natural</th><th>Total</th></tr></thead>
-      <tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesNome(mk)}</td><td>${q.iatf}</td><td>${q.monta}</td><td><b>${q.total}</b></td></tr>`).join("")}
-      <tr style="border-top:2px solid var(--linha);font-weight:700"><td>Total</td><td>${totIatfParto}</td><td>${totMontaParto}</td><td><b>${partos.length}</b></td></tr></tbody></table></div>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Mês</th><th>IATF</th><th>Monta natural</th><th>Total</th></tr></thead>
+      <tbody>${mesesParto.map(([mk,q])=>`<tr><td data-label="Mês"><b>${mesNome(mk)}</b></td><td data-label="IATF">${q.iatf}</td><td data-label="Monta natural">${q.monta}</td><td data-label="Total"><b>${q.total}</b></td></tr>`).join("")}
+      <tr style="border-top:2px solid var(--linha);font-weight:700"><td data-label="Mês">Total</td><td data-label="IATF">${totIatfParto}</td><td data-label="Monta natural">${totMontaParto}</td><td data-label="Total"><b>${partos.length}</b></td></tr></tbody></table></div>
       <details class="exp" ${partos.length>15?"":"open"}>
         <summary>Detalhe por data prevista (${partos.length})</summary>
         <div class="exp-body" style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
@@ -2003,7 +2026,7 @@ async function gerarRelatorio(){
       `:`<p class="muted">Nenhuma prenhez com data de monta/previsão ainda. Informe a data da monta nas prenhas (ex.: as do lote NOMA) para o app projetar o parto.</p>`}
     </div>
 
-    <div class="card">
+    <div class="card" id="rel-descarte">
       <h3>Lista de descarte (candidatas)</h3>
       <p class="muted">Fêmeas <b>vazias</b> e <b>repetidoras</b> (2+ vazias em até 6 meses) — candidatas a descarte. Total: ${descarte.length}.</p>
       <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Idade</th><th>Motivo</th><th>Última info</th></tr></thead>
