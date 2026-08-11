@@ -1755,7 +1755,7 @@ async function gerarRelatorio(){
   const mesNome=mk=>{ const p=mk.split('-'); return MESES[parseInt(p[1],10)-1]+'/'+p[0]; };
   const hojeMs=Date.now();
   const partos=[]; let semPrev=0;
-  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)){
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && u.fase==="prenhe"){
     const dp=calcPrevisaoParto(u);
     if(dp) partos.push({f, dp, cob:coberturaTxt(u), tipo:u.tipo}); else semPrev++;
   }});
