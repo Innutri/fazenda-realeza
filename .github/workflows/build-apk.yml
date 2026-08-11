@@ -1,0 +1,361 @@
+name: Build APK
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+      - name: Generate project files
+        run: |
+          cat > settings.gradle <<'CLAUDE_FILE_EOF_9137'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FazendaBalanca"
+          include(":app")
+
+          CLAUDE_FILE_EOF_9137
+          cat > build.gradle <<'CLAUDE_FILE_EOF_9137'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
+          }
+
+          CLAUDE_FILE_EOF_9137
+          cat > gradle.properties <<'CLAUDE_FILE_EOF_9137'
+          org.gradle.jvmargs=-Xmx3072m
+          android.useAndroidX=true
+          android.enableJetifier=false
+          kotlin.code.style=official
+
+          CLAUDE_FILE_EOF_9137
+          mkdir -p app
+          cat > app/build.gradle <<'CLAUDE_FILE_EOF_9137'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+          android {
+              namespace 'com.fazendarealeza.balanca'
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.fazendarealeza.balanca"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  debug {
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          dependencies {
+          }
+
+          CLAUDE_FILE_EOF_9137
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'CLAUDE_FILE_EOF_9137'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/sym_def_app_icon"
+                  android:label="Fazenda Realeza - Balanca"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|screenLayout">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+
+          CLAUDE_FILE_EOF_9137
+          mkdir -p app/src/main/java/com/fazendarealeza/balanca
+          cat > app/src/main/java/com/fazendarealeza/balanca/MainActivity.kt <<'CLAUDE_FILE_EOF_9137'
+          package com.fazendarealeza.balanca
+
+          import android.Manifest
+          import android.app.Activity
+          import android.app.AlertDialog
+          import android.bluetooth.BluetoothAdapter
+          import android.bluetooth.BluetoothDevice
+          import android.bluetooth.BluetoothSocket
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.os.Build
+          import android.os.Bundle
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.webkit.WebChromeClient
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import java.io.InputStream
+          import java.util.UUID
+
+          class MainActivity : Activity() {
+
+              private val APP_URL = "https://innutri.github.io/fazenda-realeza/"
+              private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+              private lateinit var web: WebView
+              private lateinit var status: TextView
+              private lateinit var log: TextView
+              private lateinit var logScroll: ScrollView
+
+              private var socket: BluetoothSocket? = null
+              @Volatile private var reading = false
+              private val logLines = ArrayList<String>()
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val root = LinearLayout(this)
+                  root.orientation = LinearLayout.VERTICAL
+
+                  val bar = LinearLayout(this)
+                  bar.orientation = LinearLayout.HORIZONTAL
+                  bar.setBackgroundColor(Color.parseColor("#0E5A34"))
+                  bar.setPadding(dp(10), dp(8), dp(10), dp(8))
+                  bar.gravity = Gravity.CENTER_VERTICAL
+
+                  status = TextView(this)
+                  status.text = "Balanca: desconectada"
+                  status.setTextColor(Color.WHITE)
+                  status.textSize = 14f
+                  status.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+
+                  val btnConnect = Button(this)
+                  btnConnect.text = "Conectar"
+                  btnConnect.setOnClickListener { pickDevice() }
+
+                  val btnLog = Button(this)
+                  btnLog.text = "Dados"
+                  btnLog.setOnClickListener { toggleLog() }
+
+                  bar.addView(status)
+                  bar.addView(btnConnect)
+                  bar.addView(btnLog)
+
+                  logScroll = ScrollView(this)
+                  logScroll.visibility = View.GONE
+                  logScroll.setBackgroundColor(Color.parseColor("#111111"))
+                  logScroll.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150))
+
+                  log = TextView(this)
+                  log.setTextColor(Color.parseColor("#9DEBB8"))
+                  log.textSize = 12f
+                  log.setPadding(dp(8), dp(8), dp(8), dp(8))
+                  log.text = "Aguardando dados da balanca...\n"
+                  logScroll.addView(log)
+
+                  web = WebView(this)
+                  web.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+                  web.settings.javaScriptEnabled = true
+                  web.settings.domStorageEnabled = true
+                  web.settings.databaseEnabled = true
+                  web.webViewClient = WebViewClient()
+                  web.webChromeClient = WebChromeClient()
+
+                  root.addView(bar)
+                  root.addView(logScroll)
+                  root.addView(web)
+                  setContentView(root)
+
+                  web.loadUrl(APP_URL)
+                  ensurePermissions()
+              }
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              private fun ensurePermissions() {
+                  if (Build.VERSION.SDK_INT >= 31) {
+                      val need = ArrayList<String>()
+                      if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.BLUETOOTH_CONNECT)
+                      if (checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.BLUETOOTH_SCAN)
+                      if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), 1)
+                  }
+              }
+
+              private fun hasConnectPerm(): Boolean =
+                  Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+              private fun pickDevice() {
+                  if (!hasConnectPerm()) { ensurePermissions(); setStatus("permita o Bluetooth e toque em Conectar de novo"); return }
+                  val adapter = BluetoothAdapter.getDefaultAdapter()
+                  if (adapter == null) { setStatus("sem Bluetooth neste aparelho"); return }
+                  if (!adapter.isEnabled) { setStatus("ligue o Bluetooth do celular"); return }
+                  val bonded = try { adapter.bondedDevices.toList() } catch (e: SecurityException) { emptyList<BluetoothDevice>() }
+                  if (bonded.isEmpty()) { setStatus("nenhum aparelho pareado. Pareie a balanca nas configuracoes (PIN 0000)."); return }
+                  val names = bonded.map { d -> safeName(d) + "\n" + d.address }.toTypedArray()
+                  AlertDialog.Builder(this)
+                      .setTitle("Escolha a balanca")
+                      .setItems(names) { _, i -> connect(bonded[i]) }
+                      .show()
+              }
+
+              private fun safeName(d: BluetoothDevice): String = try { d.name ?: "(sem nome)" } catch (e: SecurityException) { "(sem nome)" }
+
+              private fun connect(device: BluetoothDevice) {
+                  setStatus("conectando em " + safeName(device) + "...")
+                  Thread {
+                      try {
+                          try { BluetoothAdapter.getDefaultAdapter()?.cancelDiscovery() } catch (e: Exception) {}
+                          var s: BluetoothSocket
+                          try {
+                              s = device.createRfcommSocketToServiceRecord(SPP_UUID)
+                              s.connect()
+                          } catch (e: Exception) {
+                              val m = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                              s = m.invoke(device, 1) as BluetoothSocket
+                              s.connect()
+                          }
+                          socket = s
+                          runOnUiThread { setStatus("conectada: " + safeName(device)) }
+                          readLoop(s.inputStream)
+                      } catch (e: Exception) {
+                          runOnUiThread { setStatus("falha ao conectar: " + (e.message ?: "erro")) }
+                      }
+                  }.start()
+              }
+
+              private fun readLoop(input: InputStream) {
+                  reading = true
+                  val buf = ByteArray(1024)
+                  val sb = StringBuilder()
+                  try {
+                      while (reading) {
+                          val n = input.read(buf)
+                          if (n < 0) break
+                          val chunk = String(buf, 0, n, Charsets.ISO_8859_1)
+                          sb.append(chunk)
+                          var idx = indexOfLineBreak(sb)
+                          while (idx >= 0) {
+                              val line = sb.substring(0, idx).trim()
+                              sb.delete(0, idx + 1)
+                              if (line.isNotEmpty()) { val f = line; runOnUiThread { onLine(f) } }
+                              idx = indexOfLineBreak(sb)
+                          }
+                      }
+                  } catch (e: Exception) {
+                      runOnUiThread { setStatus("conexao encerrada: " + (e.message ?: "")) }
+                  }
+              }
+
+              private fun indexOfLineBreak(sb: StringBuilder): Int {
+                  for (i in sb.indices) { val c = sb[i]; if (c == '\n' || c == '\r') return i }
+                  return -1
+              }
+
+              private fun onLine(line: String) {
+                  appendLog(line)
+                  val eid = Regex("\\d{15,16}").find(line)?.value
+                  val nums = Regex("-?\\d+[.,]?\\d*").findAll(line).map { it.value.replace(',', '.') }.toList()
+                  val pesoCand = nums.filter { it != eid && it.length <= 7 }
+                  val peso = pesoCand.lastOrNull()
+                  if (peso != null && peso.any { it.isDigit() }) {
+                      inject(peso, eid ?: "")
+                      setStatus("peso recebido: " + peso + " kg")
+                  }
+              }
+
+              private fun inject(peso: String, eid: String) {
+                  val js = "window.balancaPeso && window.balancaPeso(" + peso + ", '" + eid + "');"
+                  web.post { web.evaluateJavascript(js, null) }
+              }
+
+              private fun appendLog(line: String) {
+                  logLines.add(line)
+                  while (logLines.size > 40) logLines.removeAt(0)
+                  log.text = logLines.joinToString("\n")
+                  logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+              }
+
+              private fun toggleLog() {
+                  logScroll.visibility = if (logScroll.visibility == View.GONE) View.VISIBLE else View.GONE
+              }
+
+              private fun setStatus(t: String) { status.text = "Balanca: " + t }
+
+              override fun onDestroy() {
+                  reading = false
+                  try { socket?.close() } catch (e: Exception) {}
+                  super.onDestroy()
+              }
+
+              override fun onBackPressed() {
+                  if (web.canGoBack()) web.goBack() else super.onBackPressed()
+              }
+          }
+
+          CLAUDE_FILE_EOF_9137
+      - name: Download Gradle 8.7
+        run: |
+          curl -sL -o gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle.zip
+      - name: Build debug APK
+        run: ./gradle-8.7/bin/gradle assembleDebug --no-daemon --stacktrace
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk fazenda-realeza-balanca.apk
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fazenda-realeza-balanca-apk
+          path: fazenda-realeza-balanca.apk
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: balanca-v1
+          name: Fazenda Realeza - Balanca (APK)
+          body: APK para ler a balanca XR5000 via Bluetooth e enviar o peso ao app.
+          files: fazenda-realeza-balanca.apk
