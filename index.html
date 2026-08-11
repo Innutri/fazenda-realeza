@@ -1634,10 +1634,17 @@ async function gerarRelatorio(){
   femeasAtivas.forEach(f=>{ const c=categoriaAnimal(f); if(!catRep[c]) return; const u=ultimoRepro(f.id); if(u){ catRep[c].exp++; if(u.fase==="prenhe"||u.resultado_prenhez===true) catRep[c].pren++; } });
   // 4) distribuição na estação (data da monta; diagnóstico quando ausente)
   const tercos=[0,0,0]; let semDataMonta=0, estIni=null, estFim=null;
-  const refs=prenhasRecs.map(x=>{ const d=x.r.data_cobertura||x.r.data_diagnostico; return d?new Date(d).getTime():null; });
+  // só usa data REAL de cobertura/monta (não o diagnóstico) — evita "estação" falsa
+  const refs=prenhasRecs.map(x=>{ const d=x.r.data_cobertura; return d?new Date(d).getTime():null; });
   const refsOk=refs.filter(t=>t!=null); semDataMonta=refs.filter(t=>t==null).length;
+  const datasDistintas=new Set(refsOk).size;
+  let estacaoValida=false;
   if(refsOk.length){ const min=Math.min(...refsOk), max=Math.max(...refsOk); estIni=min; estFim=max; const span=max-min;
-    refsOk.forEach(t=>{ let idx=span>0?Math.min(2,Math.floor((t-min)/span*3)):0; tercos[idx]++; }); }
+    // só há "estação" para dividir se houver dispersão real de datas (>= 2 datas e span >= 14 dias)
+    estacaoValida = datasDistintas>=2 && span>=14*86400000;
+    if(estacaoValida) refsOk.forEach(t=>{ let idx=Math.min(2,Math.floor((t-min)/span*3)); tercos[idx]++; }); }
+  // composição real do plantel prenhe por método
+  const compIatf=mIatf, compMonta=mTouro;
   const totTercos=tercos[0]+tercos[1]+tercos[2]; const pt=(x)=> totTercos?Math.round(x/totTercos*100):0;
   const dISO=(ms)=> new Date(ms).toISOString().slice(0,10);
   // 5) lista de descarte consolidada
@@ -1780,15 +1787,21 @@ async function gerarRelatorio(){
 
     <div class="card">
       <h3>Distribuição da prenhez na estação</h3>
-      ${totTercos?`
-      <p class="muted">Período: ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))} — por data da monta (usa o diagnóstico quando a monta não foi informada).</p>
+      ${estacaoValida?`
+      <p class="muted">Período: ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))} — por data da monta/IATF.</p>
       <div class="kpis" style="margin-top:6px">
         <div class="kpi"><div class="n" style="color:var(--ok)">${tercos[0]}</div><div class="l">1º terço (${pt(tercos[0])}%)</div></div>
         <div class="kpi"><div class="n">${tercos[1]}</div><div class="l">2º terço (${pt(tercos[1])}%)</div></div>
         <div class="kpi"><div class="n" style="color:var(--txt2)">${tercos[2]}</div><div class="l">3º terço (${pt(tercos[2])}%)</div></div>
       </div>
-      <p class="muted" style="margin-top:10px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data não entraram.)`:""}</p>
-      `:`<p class="muted">Ainda não dá para distribuir — informe a data da monta das prenhas.${semDataMonta?` (${semDataMonta} prenha(s) sem data.)`:""}</p>`}
+      <p class="muted" style="margin-top:10px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data de monta não entraram.)`:""}</p>
+      `:`
+      <p class="muted">Ainda não há dispersão de datas para dividir em terços — a estação está concentrada em uma única data de manejo. Composição atual das prenhas por método:</p>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n" style="color:var(--verde2)">${compIatf}</div><div class="l">IATF — precoces de 1ª cria</div></div>
+        <div class="kpi"><div class="n">${compMonta}</div><div class="l">Monta natural</div></div>
+      </div>
+      <p class="muted" style="margin-top:10px">A divisão em 1º/2º/3º terço aparece automaticamente quando as montas tiverem datas espalhadas ao longo da estação.</p>`}
     </div>
 
     <div class="card">
