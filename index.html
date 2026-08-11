@@ -1203,6 +1203,15 @@ function coberturaTxt(c){
   if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
   return "—";
 }
+// Previsão de parto: IATF = diagnóstico + 225 dias; monta natural = diagnóstico + 220 dias
+function diasGestacaoPos(tipo){ return tipo==="iatf" ? 225 : 220; }
+function calcPrevisaoParto(r){
+  if(r && r.resultado_prenhez!==true && r.fase!=="prenhe") return null;
+  const base = r && r.data_diagnostico;
+  if(!base) return (r&&r.data_prevista_parto)||null;
+  const d=new Date(base+"T00:00:00"); d.setDate(d.getDate()+diasGestacaoPos(r.tipo));
+  return d.toISOString().slice(0,10);
+}
 async function opFemea(a){
   const box=$("#op-body");
   box.innerHTML=`<div class="card"><div class="empty">Carregando reprodução…</div></div>`;
@@ -1302,6 +1311,7 @@ async function salvarReproducao(animalId,ciclo){
     fase: dg,
     resultado_prenhez: dg==="prenhe"?true: dg==="vazia"?false:null,
     data_diagnostico: aguard ? null : (v("rp_ddiag").value||null) };
+  rec.data_prevista_parto = dg==="prenhe" ? calcPrevisaoParto(rec) : null;
   let sireNome=null;
   if(tipo==="touro"){
     const eq=(LOCAL.equipes||[]).find(e=>e.id===v("rp_equipe").value);
@@ -1667,8 +1677,7 @@ async function gerarRelatorio(){
   const hojeMs=Date.now();
   const partos=[]; let semPrev=0;
   femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)){
-    let dp=u.data_prevista_parto;
-    if(!dp && u.data_cobertura){ const d=new Date(u.data_cobertura); d.setDate(d.getDate()+295); dp=d.toISOString().slice(0,10); }
+    const dp=calcPrevisaoParto(u);
     if(dp) partos.push({f, dp, cob:coberturaTxt(u)}); else semPrev++;
   }});
   partos.sort((a,b)=> a.dp<b.dp?-1:a.dp>b.dp?1:0);
@@ -1841,7 +1850,7 @@ async function gerarRelatorio(){
 
     <div class="card">
       <h3>Previsão de partos</h3>
-      <p class="muted">Pela data da monta/IATF + gestação (~295 dias), ou pela data prevista informada no diagnóstico.</p>
+      <p class="muted">Calculada a partir da confirmação (diagnóstico): IATF + 225 dias · monta natural + 220 dias.</p>
       <div class="kpis">
         <div class="kpi"><div class="n">${partos.length}</div><div class="l">Prenhas com previsão</div></div>
         <div class="kpi"><div class="n" style="color:var(--ouro)">${prox60}</div><div class="l">Partos nos próximos 60 dias</div></div>
