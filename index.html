@@ -463,6 +463,8 @@ window.balancaPeso = function(peso, eid){
   try{
     peso = (""+peso).replace(",",".");
     window.__ultimoPesoBalanca = peso;
+    window.__balStatus = window.__balStatus || {}; window.__balStatus.ultimoPeso = peso; window.__balStatus.conectado = true;
+    const _bl = document.getElementById("bal-live"); if(_bl) _bl.innerHTML = _balLiveHtml(window.__balStatus);
     const p = document.getElementById("mo_peso");
     if(p){
       p.value = peso;
@@ -1495,8 +1497,49 @@ function histReproducao(ciclos, editable){
 // BALANÇA — IMPORTAR PESOS POR ARQUIVO (CSV da XR5000)
 // ============================================================
 let BAL = null;
+function _balLiveHtml(s){
+  s = s || window.__balStatus || {};
+  const on = !!s.conectado;
+  const cor = on ? "var(--ok)" : "var(--txt2)";
+  const txt = on ? ("Conectada"+(s.modo?(" ("+esc(s.modo)+")"):"")) : "Aguardando a balança conectar…";
+  const peso = s.ultimoPeso ? `<div style="font-size:30px;font-weight:800;color:var(--verde);margin-top:4px">${esc(s.ultimoPeso)} kg <span class="muted" style="font-size:13px;font-weight:400">— último peso recebido</span></div>` : `<div class="muted" style="margin-top:4px">Nenhum peso recebido ainda. Registre um peso na balança.</div>`;
+  return `<div style="display:flex;align-items:center;gap:10px;margin:6px 0">
+      <span style="width:16px;height:16px;border-radius:50%;background:${cor};display:inline-block"></span>
+      <b style="color:${cor};font-size:16px">${txt}</b></div>${peso}`;
+}
+function balancaVerificar(){ try{ if(window.BalancaNativo){ window.balancaStatus(window.BalancaNativo.status()); toast("Status atualizado.","ok"); } }catch(e){} }
+function balancaConectar(){ try{ if(window.BalancaNativo){ window.BalancaNativo.conectar(); toast("Tentando conectar na balança…","ok"); } }catch(e){} }
+function iniciarPollBalanca(){
+  clearInterval(window.__balPoll);
+  window.__balPoll = setInterval(()=>{
+    try{
+      if(window.BalancaNativo && document.getElementById("bal-live")){ window.balancaStatus(window.BalancaNativo.status()); }
+      else { clearInterval(window.__balPoll); }
+    }catch(e){}
+  }, 2000);
+}
+window.balancaStatus = function(s){
+  try{ window.__balStatus = (typeof s==="string"? JSON.parse(s): s) || {}; }catch(e){ window.__balStatus = {texto:String(s)}; }
+  const el = document.getElementById("bal-live");
+  if(el) el.innerHTML = _balLiveHtml(window.__balStatus);
+};
 function renderBalanca(){
-  app.innerHTML = `
+  const nativo = (typeof window.BalancaNativo!=="undefined") && (function(){ try{ return !!window.BalancaNativo.presente(); }catch(e){ return false; } })();
+  const liveCard = nativo ? `
+  <div class="card">
+    <h3>⚖️ Conexão com a balança (ao vivo)</h3>
+    <div id="bal-live">${_balLiveHtml(window.__balStatus)}</div>
+    <div class="actions" style="margin-top:10px">
+      <button class="btn gold" type="button" onclick="balancaVerificar()">🔄 Verificar conexão</button>
+      <button class="btn" type="button" onclick="balancaConectar()">Conectar / reconectar</button>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:8px">Deixe o app aberto durante a pesagem. Abra o animal no Operacional e, ao registrar o peso na balança, ele preenche sozinho.</p>
+  </div>` : `
+  <div class="card">
+    <h3>⚖️ Conexão com a balança (ao vivo)</h3>
+    <p class="muted" style="font-size:15px;line-height:1.55">A conexão automática por Bluetooth funciona dentro do <b>app "Fazenda Realeza - Balança"</b> (APK Android). Você está no navegador comum — aqui use a <b>importação por arquivo</b> abaixo, ou abra pelo app. <a href="https://github.com/Innutri/fazenda-realeza/releases/tag/balanca-v3" target="_blank">Baixar o app</a>.</p>
+  </div>`;
+  app.innerHTML = liveCard + `
   <div class="card">
     <h3>⚖️ Importar pesos da balança (XR5000)</h3>
     <p class="muted" style="font-size:15px;line-height:1.55">
@@ -1523,6 +1566,7 @@ function renderBalanca(){
     <div id="bal-map"></div>
     <div id="bal-prev"></div>
   </div>`;
+  if(nativo){ balancaVerificar(); iniciarPollBalanca(); }
 }
 function _balDetect(line){
   const c=[[';',line.split(';').length],[',',line.split(',').length],['\t',line.split('\t').length],[' ',line.trim().split(/\s+/).length]];
