@@ -114,6 +114,12 @@
   .placeholder{text-align:center;padding:50px 20px;color:var(--txt2)}
   .placeholder .ic{font-size:48px;opacity:.4}
   .flowbox{border:1px dashed var(--ouro);background:#fffdf6;border-radius:10px;padding:16px;margin-top:14px}
+  .flowbox.parto{border:1.5px solid #7fbfe0;background:#eff7fd}
+  .flowbox.parto b{color:#1c6699}
+  .flowbox.desmame{border:1.5px solid #e0b877;background:#fdf7ec}
+  .flowbox.desmame b{color:#8a5a12}
+  .criacard{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--linha);border-radius:8px;padding:10px 12px;margin-top:10px}
+  .criacard .big{font-size:22px;font-weight:800;color:var(--verde)}
   .flowsteps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
   .flowstep{flex:1;min-width:90px;text-align:center;padding:8px;border-radius:8px;background:#f0f2ee;color:var(--txt2);font-size:12px;font-weight:600}
   .flowstep.done{background:#e1f4e6;color:var(--ok)}
@@ -1221,6 +1227,8 @@ async function opFemea(a){
   const ultimo = cs[0]||null;
   let flow="";
   if(aguardando) flow=flowDiagnostico(a,aguardando);
+  else if(ultimo && ultimo.fase==="prenhe") flow=await flowParicao(a,ultimo);
+  else if(ultimo && ultimo.fase==="parida" && !ultimo.desmame_feito) flow=await flowDesmame(a,ultimo);
   else flow=await flowNovaReproducao(a,(ultimo?ultimo.ciclo:0)+1,ultimo);
   const stat=situacaoFemea(cs);
   box.innerHTML=`
@@ -1243,7 +1251,7 @@ function situacaoFemea(ciclos){
   let tag=`<span class="tag proc">sem registro</span>`;
   if(u){
     if(u.fase==="prenhe") tag=`<span class="tag prenhe">prenha (gestante)</span>`;
-    else if(u.fase==="parida") tag=`<span class="tag proc">parida</span>`;
+    else if(u.fase==="parida") tag = u.desmame_feito ? `<span class="tag vazia">liberada (desmamada)</span>` : `<span class="tag proc">parida (lactante)</span>`;
     else if(u.fase==="vazia") tag=`<span class="tag vazia">vazia</span>`;
     else if(u.fase==="aguardando") tag=`<span class="tag proc">aguardando diagnóstico</span>`;
   }
@@ -1285,6 +1293,77 @@ async function flowNovaReproducao(a,prox,ultimo){
       ${descarte}
     </div>
   </div>`;
+}
+async function flowParicao(a, rep){
+  const { data:sug } = await sb.rpc("proximo_numero_disponivel");
+  const hoje=new Date().toISOString().slice(0,10);
+  const prevTxt = rep.data_prevista_parto ? `Previsão de parto: <b>${fmtDate(rep.data_prevista_parto)}</b> · ` : "";
+  return `<div class="flowbox parto">
+    <b>Registrar parição — ciclo nº ${rep.ciclo}</b>
+    <p class="muted">${prevTxt}Fêmea prenhe (${esc(coberturaTxt(rep))}). Ao registrar o parto, a cria entra no rebanho já com a genealogia da mãe.</p>
+    <div class="grid" style="margin-top:10px">
+      <div class="field"><label>Data da parição</label><input id="pt_data" type="date" value="${hoje}"></div>
+      <div class="field"><label>Sexo da cria</label><select id="pt_sexo"><option value="femea">Fêmea (bezerra)</option><option value="macho">Macho (bezerro)</option></select></div>
+      <div class="field"><label>Nº / registro da cria</label><input id="pt_num" type="number" value="${sug||''}" placeholder="nº do bezerro(a)"></div>
+      <div class="field"><label>Peso ao nascer (kg) — opcional</label><input id="pt_pnasc" type="number" step="0.1"></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Registro genealógico (herd-book) — opcional</label><input id="pt_reg" placeholder="opcional"></div>
+    <div class="actions"><button class="btn gold" onclick="salvarParicao('${a.id}','${rep.id}')">Registrar parição</button></div>
+  </div>`;
+}
+async function salvarParicao(maeId, repId){
+  const v=id=>document.getElementById(id);
+  const dataParto=v("pt_data").value||null;
+  if(!dataParto) return toast("Informe a data da parição.","err");
+  const sexo=v("pt_sexo").value;
+  const num=v("pt_num").value?parseInt(v("pt_num").value):null;
+  const mae=(LOCAL.animais||[]).find(x=>x.id===maeId)||{};
+  let pai_id=null, pai_ref=null;
+  const { data:tou } = await sb.from("reproducao_touros").select("touro_id,touro_nome").eq("reproducao_id",repId).limit(1).maybeSingle();
+  if(tou){ pai_id=tou.touro_id||null; pai_ref=tou.touro_nome||null; }
+  const calf={
+    tipo:sexo, numero:num, origem:"nascimento",
+    data_nascimento:dataParto,
+    mae_id:maeId, mae_ref:null, pai_id, pai_ref,
+    raca: mae.raca||null,
+    registro: v("pt_reg").value.trim()||null,
+    peso_nascimento: v("pt_pnasc").value?parseFloat(v("pt_pnasc").value):null,
+  };
+  const { data:novo, error } = await sb.from("animais").insert(calf);
+  if(error) return erroInsert(error, num);
+  const calfId=novo[0].id;
+  const { error:e2 } = await sb.from("reproducao").update({ fase:"parida", data_parto_real:dataParto, bezerro_animal_id:calfId, bezerro_numero:num, bezerro_sexo:sexo }).eq("id",repId);
+  if(e2) return toast("Cria criada, mas erro ao atualizar reprodução: "+e2.message,"err");
+  toast("Parição registrada! Cria nº "+(num??"?")+" adicionada ao rebanho.","ok");
+  buscarAnimalOp();
+}
+async function flowDesmame(a, rep){
+  const hoje=new Date().toISOString().slice(0,10);
+  const sexoTxt = rep.bezerro_sexo==="macho"?"Bezerro (macho)":"Bezerra (fêmea)";
+  const idadeCria = rep.data_parto_real? (" · "+idadeTxt(rep.data_parto_real)) : "";
+  return `<div class="flowbox desmame">
+    <b>Registrar desmame — ciclo nº ${rep.ciclo}</b>
+    <p class="muted">Após o desmame a vaca fica liberada para o próximo ciclo (nova cobertura).</p>
+    <div class="criacard"><div class="big">nº ${rep.bezerro_numero??"?"}</div><div>${sexoTxt}${rep.data_parto_real?` · nascida em ${fmtDate(rep.data_parto_real)}${idadeCria}`:""}</div></div>
+    <div class="grid" style="margin-top:10px">
+      <div class="field"><label>Data do desmame</label><input id="dm_data" type="date" value="${hoje}"></div>
+      <div class="field"><label>Peso no desmame (kg)</label><input id="dm_peso" type="number" step="0.1" placeholder="kg"></div>
+    </div>
+    <div class="actions"><button class="btn gold" onclick="salvarDesmame('${a.id}','${rep.id}','${rep.bezerro_animal_id||""}')">Registrar desmame e liberar vaca</button></div>
+  </div>`;
+}
+async function salvarDesmame(maeId, repId, calfId){
+  const v=id=>document.getElementById(id);
+  const dataDes=v("dm_data").value||null;
+  if(!dataDes) return toast("Informe a data do desmame.","err");
+  const peso=v("dm_peso").value?parseFloat(v("dm_peso").value):null;
+  if(calfId){
+    await sb.from("animais").update({peso_desmame:peso, peso:peso}).eq("id",calfId);
+    if(peso!=null) await sb.from("operacoes_rebanho").insert({animal_id:calfId, data:dataDes, peso:peso, vermifugo:false, carbunculo:false, vacina_reprodutiva:false, outros_medicamentos:"Pesagem de desmame"});
+  }
+  await sb.from("reproducao").update({desmame_feito:true, data_desmame:dataDes, peso_desmame_cria:peso}).eq("id",repId);
+  toast("Desmame registrado. Vaca liberada para o próximo ciclo.","ok");
+  buscarAnimalOp();
 }
 function toggleTipoCob(){
   const t=document.getElementById("rp_tipo").value;
@@ -1678,11 +1757,12 @@ async function gerarRelatorio(){
   const partos=[]; let semPrev=0;
   femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)){
     const dp=calcPrevisaoParto(u);
-    if(dp) partos.push({f, dp, cob:coberturaTxt(u)}); else semPrev++;
+    if(dp) partos.push({f, dp, cob:coberturaTxt(u), tipo:u.tipo}); else semPrev++;
   }});
   partos.sort((a,b)=> a.dp<b.dp?-1:a.dp>b.dp?1:0);
-  const porMesParto={}; partos.forEach(p=>{ const mk=p.dp.slice(0,7); porMesParto[mk]=(porMesParto[mk]||0)+1; });
+  const porMesParto={}; partos.forEach(p=>{ const mk=p.dp.slice(0,7); if(!porMesParto[mk]) porMesParto[mk]={iatf:0,monta:0,total:0}; if(p.tipo==="iatf") porMesParto[mk].iatf++; else porMesParto[mk].monta++; porMesParto[mk].total++; });
   const mesesParto=Object.entries(porMesParto).sort((a,b)=>a[0]<b[0]?-1:1);
+  const totIatfParto=partos.filter(p=>p.tipo==="iatf").length, totMontaParto=partos.length-totIatfParto;
   const prox60=partos.filter(p=>{ const dias=(new Date(p.dp)-hojeMs)/86400000; return dias>=0 && dias<=60; }).length;
   const faltamTxt=(dp)=>{ const dias=Math.round((new Date(dp)-hojeMs)/86400000); return dias>=0?("faltam "+dias+" dias"):("atrasado "+(-dias)+" dias"); };
 
@@ -1858,8 +1938,9 @@ async function gerarRelatorio(){
       </div>
       ${mesesParto.length?`
       <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Partos por mês</h4>
-      <div style="overflow-x:auto"><table><thead><tr><th>Mês</th><th>Partos previstos</th></tr></thead>
-      <tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesNome(mk)}</td><td><b>${q}</b></td></tr>`).join("")}</tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Mês</th><th>IATF</th><th>Monta natural</th><th>Total</th></tr></thead>
+      <tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesNome(mk)}</td><td>${q.iatf}</td><td>${q.monta}</td><td><b>${q.total}</b></td></tr>`).join("")}
+      <tr style="border-top:2px solid var(--linha);font-weight:700"><td>Total</td><td>${totIatfParto}</td><td>${totMontaParto}</td><td><b>${partos.length}</b></td></tr></tbody></table></div>
       <details class="exp" ${partos.length>15?"":"open"}>
         <summary>Detalhe por data prevista (${partos.length})</summary>
         <div class="exp-body" style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
