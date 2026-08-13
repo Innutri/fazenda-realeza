@@ -355,10 +355,14 @@ class Q {
     if(this.op==="update"){
       const rows=LOCAL[this.t].filter(r=>this.f.every(fn=>fn(r)));
       for(const r of rows){
+        const antes=Object.assign({},r);           // guarda o estado p/ desfazer se a nuvem falhar
         Object.assign(r,this.payload);
         const {id, ...doc}=r;
         const { error } = await RS.from(this.t).update({doc}).eq("id",id);
-        if(error) return {data:null,error};
+        if(error){
+          for(const k of Object.keys(this.payload)){ if(k in antes) r[k]=antes[k]; else delete r[k]; }
+          return {data:null,error};
+        }
       }
       flashSave();
       return {data:rows,error:null};
@@ -388,9 +392,11 @@ const sb = {
     if(name==="numeros_disponiveis"){ return {data:numerosLivres((args&&args.p_limite)||30),error:null}; }
     if(name==="arquivar_animal"){ const a=LOCAL.animais.find(x=>x.id===args.p_id);
       if(!a) return {data:null,error:{message:"não encontrado"}};
+      const antes=Object.assign({},a);             // p/ desfazer se a nuvem falhar
       a.numero_original=a.numero; a.codigo_arquivo="A"+(a.numero??a.id); a.numero=null; a.arquivado=true; a.status=args.p_status||"vendido";
       const {id, ...doc}=a; const { error } = await RS.from("animais").update({doc}).eq("id",id);
-      flashSave(); return {data:a,error}; }
+      if(error){ Object.assign(a,antes); return {data:null,error}; }
+      flashSave(); return {data:a,error:null}; }
     return {data:null,error:{message:"rpc "+name+" indisponível"}};
   }
 };
@@ -1480,9 +1486,13 @@ async function descartarAnimal(animalId,numero){
 async function excluirReproducao(id){
   if(!confirm("Excluir este registro de reprodução? Esta ação não pode ser desfeita.")) return;
   const links=(LOCAL.reproducao_touros||[]).filter(r=>r.reproducao_id===id);
-  for(const l of links){ await RS.from("reproducao_touros").delete().eq("id",l.id); }
+  for(const l of links){
+    const { error } = await RS.from("reproducao_touros").delete().eq("id",l.id);
+    if(error) return toast("Não foi possível excluir ("+msgErro(error)+"). Tente de novo.","err");
+  }
   LOCAL.reproducao_touros=(LOCAL.reproducao_touros||[]).filter(r=>r.reproducao_id!==id);
-  await RS.from("reproducao").delete().eq("id",id);
+  const { error:e2 } = await RS.from("reproducao").delete().eq("id",id);
+  if(e2) return toast("Não foi possível excluir ("+msgErro(e2)+"). Tente de novo.","err");
   LOCAL.reproducao=(LOCAL.reproducao||[]).filter(r=>r.id!==id);
   flashSave(); toast("Registro de reprodução excluído.","");
   fecharModal(); buscarAnimalOp();
@@ -1681,7 +1691,7 @@ function renderRelatorios(){
   bindSub();
   if(sub==="ultimos") renderUltimosRegistros(); else gerarRelatorio();
 }
-function fmtDateTime(iso){ if(!iso) return "—"; const d=new Date(iso); if(isNaN(d.getTime())) return "—"; const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fmtDateTime(iso){ if(!iso) return "—"; if(/^\d{4}-\d{2}-\d{2}$/.test(iso)) return fmtDate(iso); const d=new Date(iso); if(isNaN(d.getTime())) return "—"; const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function ordemDe(r){ const n=parseInt(String(r.id||"").replace(/\D/g,"")); return isNaN(n)?0:n; }
 function nomeAnimalRef(animalId){ const a=LOCAL.animais.find(x=>x.id===animalId); return a? ("nº "+(a.numero??a.codigo_arquivo??"?")) : "animal"; }
 function renderUltimosRegistros(){
