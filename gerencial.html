@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fazenda Realeza — Gerencial</title>
+<style>
+  :root{
+    --verde:#1f5c3d; --verde2:#2e7d54; --verde-esc:#153f2a;
+    --ouro:#c9a44a; --ouro-cl:#e6cf8a;
+    --bg:#f4f6f2; --card:#ffffff; --linha:#e2e7df;
+    --txt:#20272e; --txt2:#5d6b62; --erro:#b23b3b; --ok:#2e7d54;
+    --serie1:#1a9d5c; --serie2:#8a6410; /* paleta validada p/ gráficos */
+    --shadow:0 1px 3px rgba(20,40,30,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+  header.top{background:linear-gradient(135deg,var(--verde-esc),var(--verde));color:#fff;padding:16px 26px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header.top .crown{font-size:26px}
+  header.top h1{font-size:20px;font-weight:800}
+  header.top h1 small{display:block;font-size:11px;font-weight:400;color:var(--ouro-cl);letter-spacing:2px;text-transform:uppercase}
+  .badge{background:var(--ouro);color:#2e2508;font-size:11px;font-weight:800;letter-spacing:1px;padding:5px 12px;border-radius:20px;text-transform:uppercase}
+  .topright{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:#dfe9e2}
+  .btn{display:inline-flex;align-items:center;gap:6px;background:var(--verde2);color:#fff;border:none;border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:700;cursor:pointer}
+  .btn.ghost{background:transparent;border:1px solid var(--linha);color:var(--verde)}
+  .btn.gold{background:var(--ouro);color:#2e2508}
+  .btn:active{transform:translateY(1px)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
+  .muted{color:var(--txt2);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--linha);border-radius:14px;box-shadow:var(--shadow);padding:20px;margin-bottom:18px}
+  .card h3{font-size:15px;color:var(--verde);margin-bottom:4px}
+  .card .sub{color:var(--txt2);font-size:12.5px;margin-bottom:14px}
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){ .cols2{grid-template-columns:1fr} .wrap{padding:14px 10px 50px} .card{padding:14px} }
+
+  /* KPI row */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:linear-gradient(135deg,#fff,#f7faf7);border:1px solid var(--linha);border-radius:12px;padding:14px;text-align:center}
+  .kpi .v{font-size:26px;font-weight:700;color:var(--txt)}
+  .kpi.hero .v{font-size:48px;font-weight:800;color:var(--verde)}
+  .kpi .l{font-size:12px;color:var(--txt2);margin-top:2px}
+  .kpi .d{font-size:11.5px;margin-top:4px;color:var(--txt2)}
+  .kpi .d.up{color:var(--ok)} .kpi .d.down{color:var(--erro)}
+  @media(max-width:640px){ .kpi .v{font-size:22px} .kpi.hero .v{font-size:38px} }
+
+  /* charts */
+  .chartbox{position:relative}
+  .chartbox svg{width:100%;height:auto;display:block}
+  .legend{display:flex;gap:16px;align-items:center;margin:2px 0 10px;font-size:12.5px;color:var(--txt2)}
+  .legend .k{display:inline-flex;align-items:center;gap:6px}
+  .legend .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .tip{position:absolute;pointer-events:none;background:#20272e;color:#fff;font-size:12px;padding:6px 9px;border-radius:7px;white-space:nowrap;transform:translate(-50%,-115%);opacity:0;transition:opacity .12s;z-index:5}
+  .tip b{color:#ffd98a}
+  details.tbl{margin-top:10px}
+  details.tbl>summary{cursor:pointer;font-size:12px;color:var(--verde2);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--linha)}
+  th{color:var(--txt2);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;background:#fafbf9}
+  .tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11.5px;font-weight:700;background:#fdeaea;color:#b23b3b}
+  .empty{color:var(--txt2);text-align:center;padding:18px;font-size:13.5px}
+  .num{font-variant-numeric:tabular-nums}
+
+  /* estados */
+  #estado{padding:60px 20px;text-align:center}
+  #estado .ic{font-size:40px;margin-bottom:10px}
+  .spin{display:inline-block;width:22px;height:22px;border:3px solid var(--linha);border-top-color:var(--verde2);border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle;margin-right:8px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .exports{display:flex;gap:10px;flex-wrap:wrap}
+  @media(max-width:640px){ .exports .btn{flex:1;justify-content:center} }
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="crown">👑</span>
+  <h1>Fazenda Realeza<small>Painel Gerencial</small></h1>
+  <span class="badge">v0 · só leitura</span>
+  <div class="topright">
+    <span id="atualizado">—</span>
+    <button class="btn ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" onclick="carregar()">↻ Atualizar</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="estado"><span class="spin"></span> Carregando dados da fazenda…</div>
+  <div id="painel" style="display:none"></div>
+</div>
+
+<script>
+// ============================================================
+// PAINEL GERENCIAL — arquivo independente do app de campo.
+// Lê o MESMO banco (Supabase) em modo somente leitura.
+// Nada aqui altera dados nem toca no index.html do curral.
+// ============================================================
+const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
+const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
+const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes"];
+const L={};   // cache local só-leitura
+
+function req(path){
+  return new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();
+    x.open("GET", SB_URL+path, true);
+    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+SB_KEY);
+    x.timeout=20000;
+    x.onload=()=>{ try{ resolve(JSON.parse(x.responseText||"[]")); }catch(e){ reject(e); } };
+    x.onerror=()=>reject(new Error("sem internet ou sinal fraco"));
+    x.ontimeout=()=>reject(new Error("tempo esgotado — sinal fraco"));
+    x.send();
+  });
+}
+async function lerTabela(t){
+  let all=[], from=0; const page=1000;
+  while(true){
+    const rows=await req(`/rest/v1/${t}?select=id,doc&offset=${from}&limit=${page}`);
+    all=all.concat(rows);
+    if(rows.length<page) break;
+    from+=page;
+  }
+  return all.map(r=>Object.assign({},r.doc,{id:r.id}));
+}
+
+// ---- cálculos idênticos aos do app de campo (testados lá) ----
+const esc=s=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtDate=d=>{ if(!d) return "—"; const p=String(d).split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; };
+function idadeMeses(d){ if(!d) return null; const n=new Date(), b=new Date(d); return (n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth()); }
+function idadeTxt(d){ const m=idadeMeses(d); if(m===null) return "—"; const a=Math.floor(m/12), r=m%12; return a>0?`${a}a ${r}m`:`${m}m`; }
+function categoriaAnimal(a){
+  if(!a || a.tipo==="touro") return "";
+  const m=idadeMeses(a.data_nascimento);
+  if(m==null) return "sem data";
+  if(a.tipo==="femea") return m<=12?"bezerra": m<=24?"novilha":"vaca";
+  return m<=12?"bezerro": m<=20?"garrote":"boi";
+}
+function coberturaTxt(c){
+  if(c.tipo==="iatf") return c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF";
+  if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
+  return "—";
+}
+function diasGestacaoPos(tipo){ return tipo==="iatf" ? 225 : 220; }
+function calcPrevisaoParto(r){
+  if(r && r.resultado_prenhez!==true && r.fase!=="prenhe") return null;
+  const base = r && r.data_diagnostico;
+  if(!base) return (r&&r.data_prevista_parto)||null;
+  const d=new Date(base+"T00:00:00"); d.setDate(d.getDate()+diasGestacaoPos(r.tipo));
+  return d.toISOString().slice(0,10);
+}
+function intervaloVazias6m(ciclos){
+  const vz=(ciclos||[]).filter(c=>c.resultado_prenhez===false)
+    .map(c=>c.data_diagnostico||c.data_cobertura||((c.created_at||"").slice(0,10)))
+    .filter(Boolean).sort();
+  for(let i=0;i<vz.length;i++) for(let j=i+1;j<vz.length;j++){
+    const meses=(new Date(vz[j])-new Date(vz[i]))/(1000*60*60*24*30.44);
+    if(meses<=6) return {ok:true};
+  }
+  return {ok:false};
+}
+
+// ---- carga e render ----
+async function carregar(){
+  const est=document.getElementById("estado"), pan=document.getElementById("painel");
+  est.style.display="block"; pan.style.display="none";
+  est.innerHTML='<span class="spin"></span> Carregando dados da fazenda…';
+  try{
+    for(const t of TABELAS) L[t]=await lerTabela(t);
+    est.style.display="none"; pan.style.display="block";
+    document.getElementById("atualizado").textContent="atualizado "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    render();
+  }catch(e){
+    est.innerHTML=`<div class="ic">📶</div><h2>Não deu para carregar agora</h2>
+      <p class="muted" style="margin-top:6px">${esc(e.message||e)}. Os dados continuam seguros na nuvem.</p>
+      <button class="btn" style="margin-top:14px" onclick="carregar()">Tentar de novo</button>`;
+  }
+}
+
+function render(){
+  const A=L.animais.filter(a=>!a.arquivado);
+  const femeas=A.filter(a=>a.tipo==="femea");
+  const machos=A.filter(a=>a.tipo==="macho");
+  const touros=A.filter(a=>a.tipo==="touro" && a.procedencia!=="central");
+  const ultimoRepro=fid=>{ const cs=L.reproducao.filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+
+  // prenhez
+  let prenhes=0, vazias=0, proc=0;
+  const prenhasRecs=[];
+  femeas.forEach(f=>{ const u=ultimoRepro(f.id); if(!u) return;
+    if(u.fase==="prenhe"||u.resultado_prenhez===true){ prenhes++; prenhasRecs.push({f,r:u}); }
+    else if(u.fase==="vazia"||u.resultado_prenhez===false) vazias++;
+    else proc++;
+  });
+  const expostas=prenhes+vazias+proc;
+  const taxa=expostas?Math.round(prenhes/expostas*100):0;
+
+  // partos
+  const hoje=Date.now();
+  const partos=[];
+  prenhasRecs.forEach(x=>{ const dp=calcPrevisaoParto(x.r); if(dp) partos.push({f:x.f, dp, cob:coberturaTxt(x.r), tipo:x.r.tipo}); });
+  partos.sort((a,b)=>a.dp<b.dp?-1:1);
+  const prox60=partos.filter(p=>{ const d=(new Date(p.dp)-hoje)/86400000; return d>=0&&d<=60; }).length;
+
+  // descarte
+  const descarte=[];
+  femeas.forEach(f=>{ const cs=L.reproducao.filter(r=>r.animal_id===f.id); const u=ultimoRepro(f.id);
+    const vazia=u&&(u.fase==="vazia"||u.resultado_prenhez===false);
+    const rep=intervaloVazias6m(cs).ok;
+    if(vazia||rep) descarte.push({f, motivo:rep?"Vazia repetida":"Vazia"});
+  });
+  descarte.sort((a,b)=>(a.f.numero||0)-(b.f.numero||0));
+
+  // peso médio mensal (últimos 12 meses com dados)
+  const porMes={};
+  L.operacoes_rebanho.forEach(o=>{ if(o.peso&&o.data){ const mk=String(o.data).slice(0,7); (porMes[mk]=porMes[mk]||[]).push(parseFloat(o.peso)); } });
+  const mesesPeso=Object.entries(porMes).sort((a,b)=>a[0]<b[0]?-1:1).slice(-12)
+    .map(([mk,v])=>({mk, media:Math.round(v.reduce((s,x)=>s+x,0)/v.length), n:v.length}));
+
+  // partos por mês (para o gráfico de barras)
+  const ppm={};
+  partos.forEach(p=>{ const mk=p.dp.slice(0,7); ppm[mk]=ppm[mk]||{iatf:0,monta:0}; if(p.tipo==="iatf") ppm[mk].iatf++; else ppm[mk].monta++; });
+  const mesesParto=Object.entries(ppm).sort((a,b)=>a[0]<b[0]?-1:1).slice(0,12);
+
+  const MES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+  const mesLbl=mk=>{ const p=mk.split("-"); return MES[parseInt(p[1],10)-1]+"/"+p[0].slice(2); };
+
+  document.getElementById("painel").innerHTML=`
+  <div class="card">
+    <h3>Visão executiva</h3>
+    <div class="sub">Números ao vivo do mesmo banco que o app de campo usa — atualizados a cada registro do curral.</div>
+    <div class="kpis">
+      <div class="kpi hero"><div class="v num">${A.length}</div><div class="l">Animais ativos</div></div>
+      <div class="kpi"><div class="v num">${femeas.length}</div><div class="l">Fêmeas</div></div>
+      <div class="kpi"><div class="v num">${machos.length}</div><div class="l">Machos</div></div>
+      <div class="kpi"><div class="v num">${touros.length}</div><div class="l">Touros</div></div>
+      <div class="kpi"><div class="v num">${taxa}%</div><div class="l">Taxa de prenhez</div><div class="d">${prenhes} de ${expostas} expostas</div></div>
+      <div class="kpi"><div class="v num">${prox60}</div><div class="l">Partos em 60 dias</div></div>
+      <div class="kpi"><div class="v num" style="color:${descarte.length?'var(--erro)':'var(--txt)'}">${descarte.length}</div><div class="l">Candidatas a descarte</div></div>
+    </div>
+  </div>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>Peso médio das pesagens por mês</h3>
+      <div class="sub">Média de todas as pesagens registradas no mês (kg) — últimos 12 meses com dados.</div>
+      <div class="chartbox" id="ch-peso">${mesesPeso.length? "" : '<div class="empty">Nenhuma pesagem registrada ainda.</div>'}</div>
+      ${mesesPeso.length?`<details class="tbl"><summary>Ver tabela</summary><table><thead><tr><th>Mês</th><th>Peso médio (kg)</th><th>Pesagens</th></tr></thead><tbody>${mesesPeso.map(m=>`<tr><td>${mesLbl(m.mk)}</td><td class="num"><b>${m.media}</b></td><td class="num">${m.n}</td></tr>`).join("")}</tbody></table></details>`:""}
+    </div>
+    <div class="card">
+      <h3>Partos previstos por mês</h3>
+      <div class="sub">Projeção pelas prenhezes confirmadas (IATF +225 dias · monta +220 dias).</div>
+      ${mesesParto.length?`<div class="legend"><span class="k"><span class="sw" style="background:var(--serie1)"></span>IATF</span><span class="k"><span class="sw" style="background:var(--serie2)"></span>Monta natural</span></div>`:""}
+      <div class="chartbox" id="ch-partos">${mesesParto.length? "" : '<div class="empty">Nenhuma prenhez com previsão ainda.</div>'}</div>
+      ${mesesParto.length?`<details class="tbl"><summary>Ver tabela</summary><table><thead><tr><th>Mês</th><th>IATF</th><th>Monta</th><th>Total</th></tr></thead><tbody>${mesesParto.map(([mk,q])=>`<tr><td>${mesLbl(mk)}</td><td class="num">${q.iatf}</td><td class="num">${q.monta}</td><td class="num"><b>${q.iatf+q.monta}</b></td></tr>`).join("")}</tbody></table></details>`:""}
+    </div>
+  </div>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>Próximos partos</h3>
+      <div class="sub">As 10 previsões mais próximas.</div>
+      ${partos.length?`<table><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão</th></tr></thead><tbody>
+        ${partos.slice(0,10).map(p=>`<tr><td class="num"><b>${p.f.numero??"—"}</b></td><td>${categoriaAnimal(p.f)||"—"}</td><td>${p.cob}</td><td>${fmtDate(p.dp)}</td></tr>`).join("")}
+      </tbody></table>`:'<div class="empty">Nenhuma previsão de parto.</div>'}
+    </div>
+    <div class="card">
+      <h3>Candidatas a descarte</h3>
+      <div class="sub">Fêmeas vazias e repetidoras (2+ vazias em 6 meses).</div>
+      ${descarte.length?`<table><thead><tr><th>Nº</th><th>Categoria</th><th>Idade</th><th>Motivo</th></tr></thead><tbody>
+        ${descarte.slice(0,10).map(d=>`<tr><td class="num"><b>${d.f.numero??"—"}</b></td><td>${categoriaAnimal(d.f)||"—"}</td><td>${idadeTxt(d.f.data_nascimento)}</td><td><span class="tag">${d.motivo}</span></td></tr>`).join("")}
+      </tbody></table>${descarte.length>10?`<p class="muted" style="margin-top:8px">+ ${descarte.length-10} na exportação.</p>`:""}`:'<div class="empty">Nenhuma candidata no momento. 🎉</div>'}
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Exportar para Excel</h3>
+    <div class="sub">Baixa os dados em CSV (abre direto no Excel). Sempre a foto mais recente do banco.</div>
+    <div class="exports">
+      <button class="btn gold" onclick="exportar('animais')">🐄 Animais</button>
+      <button class="btn gold" onclick="exportar('pesagens')">⚖️ Pesagens</button>
+      <button class="btn gold" onclick="exportar('reproducao')">🐮 Reprodução</button>
+      <button class="btn gold" onclick="exportar('descarte')">✂️ Descarte</button>
+    </div>
+  </div>
+
+  <p class="muted" style="text-align:center">Painel gerencial v0 (somente leitura) · Os registros são feitos no app de campo · <a href="index.html" style="color:var(--verde2)">abrir app de campo</a></p>`;
+
+  if(mesesPeso.length) desenharLinha("ch-peso", mesesPeso.map(m=>({x:mesLbl(m.mk), y:m.media, extra:m.n+" pesagens"})));
+  if(mesesParto.length) desenharBarras("ch-partos", mesesParto.map(([mk,q])=>({x:mesLbl(mk), s1:q.iatf, s2:q.monta})));
+  window.__dadosRender={A, femeas, partos, descarte};
+}
+
+// ---- gráfico de linha (série única: sem legenda; rótulo no fim; tooltip no hover) ----
+function desenharLinha(elId, pts){
+  const el=document.getElementById(elId);
+  const W=560, H=240, m={t:16,r:52,b:28,l:40};
+  const ys=pts.map(p=>p.y);
+  let ymin=Math.min(...ys), ymax=Math.max(...ys);
+  if(ymin===ymax){ ymin-=10; ymax+=10; }
+  const pad=(ymax-ymin)*0.15; ymin=Math.max(0,Math.floor((ymin-pad)/10)*10); ymax=Math.ceil((ymax+pad)/10)*10;
+  const X=i=>m.l+(pts.length===1?0.5:(i/(pts.length-1)))*(W-m.l-m.r);
+  const Y=v=>m.t+(1-(v-ymin)/(ymax-ymin))*(H-m.t-m.b);
+  const ticks=[ymin,Math.round((ymin+ymax)/2),ymax];
+  const path=pts.map((p,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(p.y).toFixed(1)).join(" ");
+  const area=path+` L${X(pts.length-1).toFixed(1)} ${Y(ymin)} L${X(0).toFixed(1)} ${Y(ymin)} Z`;
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Peso médio mensal">
+    ${ticks.map(t=>`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e8ece6" stroke-width="1"/><text x="${m.l-6}" y="${Y(t)+4}" text-anchor="end" font-size="10.5" fill="#5d6b62">${t}</text>`).join("")}
+    <path d="${area}" fill="var(--serie1)" opacity="0.1"/>
+    <path d="${path}" fill="none" stroke="var(--serie1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.y)}" r="4.5" fill="var(--serie1)" stroke="var(--card)" stroke-width="2" data-i="${i}"/>`).join("")}
+    <text x="${X(pts.length-1)+8}" y="${Y(pts[pts.length-1].y)+4}" font-size="12" font-weight="700" fill="#20272e">${pts[pts.length-1].y} kg</text>
+    ${pts.map((p,i)=> (pts.length<=6||i%2===0||i===pts.length-1)?`<text x="${X(i)}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="#5d6b62">${p.x}</text>`:"").join("")}
+    <rect x="${m.l}" y="${m.t}" width="${W-m.l-m.r}" height="${H-m.t-m.b}" fill="transparent" id="${elId}-hit"/>
+  </svg><div class="tip" id="${elId}-tip"></div>`;
+  const svg=el.querySelector("svg"), tip=document.getElementById(elId+"-tip");
+  svg.addEventListener("mousemove",ev=>{
+    const r=svg.getBoundingClientRect(), sx=(ev.clientX-r.left)*(W/r.width);
+    let best=0,bd=1e9; pts.forEach((p,i)=>{ const d=Math.abs(X(i)-sx); if(d<bd){bd=d;best=i;} });
+    const p=pts[best];
+    tip.style.left=(X(best)/W*100)+"%"; tip.style.top=(Y(p.y)/H*100)+"%";
+    tip.innerHTML=`${p.x}: <b>${p.y} kg</b> · ${p.extra}`; tip.style.opacity=1;
+  });
+  svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
+}
+
+// ---- gráfico de barras empilhadas (2 séries: legenda + vão de 2px + tooltip) ----
+function desenharBarras(elId, pts){
+  const el=document.getElementById(elId);
+  const W=560, H=240, m={t:16,r:12,b:28,l:34};
+  const tot=pts.map(p=>p.s1+p.s2);
+  const ymax=Math.max(1,Math.ceil(Math.max(...tot)/2)*2);
+  const iw=(W-m.l-m.r)/pts.length;
+  const bw=Math.min(24, iw*0.55);
+  const Y=v=>m.t+(1-v/ymax)*(H-m.t-m.b);
+  const ticks=[0,Math.round(ymax/2),ymax];
+  let bars="";
+  pts.forEach((p,i)=>{
+    const x=m.l+iw*i+(iw-bw)/2;
+    const y1=Y(p.s1), y0=Y(0);
+    if(p.s1>0) bars+=`<path d="M${x} ${y0} L${x} ${y1+4} Q${x} ${y1} ${x+4} ${y1} L${x+bw-4} ${y1} Q${x+bw} ${y1} ${x+bw} ${y1+4} L${x+bw} ${y0} Z" fill="var(--serie1)" data-i="${i}"/>`;
+    if(p.s2>0){ const t2=Y(p.s1+p.s2)+ (p.s1>0?0:0); const yb=p.s1>0? y1-2 : y0; const yt=Y(p.s1+p.s2)- (p.s1>0?2:0);
+      bars+=`<path d="M${x} ${yb} L${x} ${yt+4} Q${x} ${yt} ${x+4} ${yt} L${x+bw-4} ${yt} Q${x+bw} ${yt} ${x+bw} ${yt+4} L${x+bw} ${yb} Z" fill="var(--serie2)" data-i="${i}"/>`; }
+    const t=p.s1+p.s2;
+    if(t>0) bars+=`<text x="${x+bw/2}" y="${Y(t)-6- (p.s1>0&&p.s2>0?2:0)}" text-anchor="middle" font-size="11" font-weight="700" fill="#20272e">${t}</text>`;
+  });
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Partos previstos por mês">
+    ${ticks.map(t=>`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e8ece6" stroke-width="1"/><text x="${m.l-6}" y="${Y(t)+4}" text-anchor="end" font-size="10.5" fill="#5d6b62">${t}</text>`).join("")}
+    ${bars}
+    ${pts.map((p,i)=>`<text x="${m.l+iw*i+iw/2}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="#5d6b62">${p.x}</text>`).join("")}
+  </svg><div class="tip" id="${elId}-tip"></div>`;
+  const svg=el.querySelector("svg"), tip=document.getElementById(elId+"-tip");
+  svg.addEventListener("mousemove",ev=>{
+    const r=svg.getBoundingClientRect(), sx=(ev.clientX-r.left)*(W/r.width);
+    const i=Math.max(0,Math.min(pts.length-1,Math.floor((sx-m.l)/iw)));
+    const p=pts[i];
+    tip.style.left=((m.l+iw*i+iw/2)/W*100)+"%"; tip.style.top=(Y(p.s1+p.s2)/H*100)+"%";
+    tip.innerHTML=`${p.x}: <b>${p.s1+p.s2} partos</b> · IATF ${p.s1} · monta ${p.s2}`; tip.style.opacity=1;
+  });
+  svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
+}
+
+// ---- exportações CSV (com BOM p/ Excel abrir acentos certos) ----
+function baixarCSV(nome, cab, linhas){
+  const sep=";";
+  const csv="﻿"+[cab.join(sep)].concat(linhas.map(l=>l.map(v=>{
+    v=(v??"").toString().replace(/"/g,'""');
+    return /[;"\n]/.test(v)?('"'+v+'"'):v;
+  }).join(sep))).join("\r\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=nome; document.body.appendChild(a); a.click(); a.remove();
+}
+function exportar(qual){
+  const hoje=new Date().toISOString().slice(0,10);
+  const A=L.animais;
+  if(qual==="animais"){
+    baixarCSV(`animais-${hoje}.csv`, ["Numero","Tipo","Categoria","Raca","Nascimento","Idade","Peso (kg)","Status","Arquivado"],
+      A.map(a=>[a.numero??a.codigo_arquivo??"", a.tipo, categoriaAnimal(a), a.raca||"", fmtDate(a.data_nascimento), idadeTxt(a.data_nascimento), a.peso??"", a.status||"ativo", a.arquivado?"sim":"não"]));
+  } else if(qual==="pesagens"){
+    const nome=id=>{ const a=A.find(x=>x.id===id); return a?(a.numero??a.codigo_arquivo??""):""; };
+    baixarCSV(`pesagens-${hoje}.csv`, ["Animal","Data","Peso (kg)","Vermifugo","Carbunculo","Vacina reprodutiva","Outros"],
+      L.operacoes_rebanho.map(o=>[nome(o.animal_id), fmtDate(o.data), o.peso??"", o.vermifugo?"sim":"", o.carbunculo?"sim":"", o.vacina_reprodutiva?"sim":"", o.outros_medicamentos||""]));
+  } else if(qual==="reproducao"){
+    const nome=id=>{ const a=A.find(x=>x.id===id); return a?(a.numero??a.codigo_arquivo??""):""; };
+    baixarCSV(`reproducao-${hoje}.csv`, ["Femea","Ciclo","Metodo","Touro/Semen","Equipe","Fase","Resultado","Data cobertura","Data diagnostico"],
+      L.reproducao.map(r=>[nome(r.animal_id), r.ciclo??"", r.tipo==="iatf"?"IATF":"Monta", r.touro_nome||"", r.equipe_nome||"", r.fase||"", r.resultado_prenhez===true?"prenhe":r.resultado_prenhez===false?"vazia":"", fmtDate(r.data_cobertura), fmtDate(r.data_diagnostico)]));
+  } else if(qual==="descarte"){
+    const d=(window.__dadosRender||{}).descarte||[];
+    baixarCSV(`descarte-${hoje}.csv`, ["Numero","Categoria","Idade","Motivo"],
+      d.map(x=>[x.f.numero??"", categoriaAnimal(x.f), idadeTxt(x.f.data_nascimento), x.motivo]));
+  }
+}
+
+carregar();
+</script>
+</body>
+</html>
