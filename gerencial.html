@@ -106,20 +106,40 @@
   #estado .ic{font-size:40px;margin-bottom:10px}
   .spin{display:inline-block;width:22px;height:22px;border:3px solid var(--linha);border-top-color:var(--verde2);border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle;margin-right:8px}
   @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* login */
+  #login{min-height:calc(100vh - 60px);display:flex;align-items:center;justify-content:center;padding:20px}
+  .loginbox{background:#fff;border:1px solid var(--linha);border-radius:16px;box-shadow:0 6px 24px rgba(20,40,30,.10);padding:30px 28px;width:100%;max-width:380px}
+  .loginbox .cr{font-size:34px;text-align:center;margin-bottom:6px}
+  .loginbox h2{text-align:center;color:var(--verde);font-size:19px;margin-bottom:4px}
+  .loginbox p.sub{text-align:center;color:var(--txt2);font-size:13px;margin-bottom:18px}
+  .loginbox .btn{width:100%;justify-content:center;font-size:15px;padding:12px;margin-top:6px}
+  .loginerr{background:#fdeaea;color:#b23b3b;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px;display:none}
+  .userchip{display:flex;align-items:center;gap:8px;font-size:12px;color:#dfe9e2}
+  .userchip b{color:#fff}
 </style>
 </head>
 <body>
 <header class="top">
   <span class="crown">👑</span>
   <h1>Fazenda Realeza<small>Painel Gerencial</small></h1>
-  <span class="badge">v0.2</span>
-  <div class="topright">
-    <span id="atualizado">—</span>
-    <button class="btn ghost" onclick="carregar()">↻ Atualizar</button>
-  </div>
+  <span class="badge">v0.3</span>
+  <div class="topright" id="topright"></div>
 </header>
 
-<div id="estado"><span class="spin"></span> Carregando dados da fazenda…</div>
+<div id="login" style="display:none">
+  <form class="loginbox" onsubmit="fazerLogin(event)">
+    <div class="cr">👑</div>
+    <h2>Painel Gerencial</h2>
+    <p class="sub">Entre com sua conta para ver os dados da fazenda e as notas fiscais.</p>
+    <div class="loginerr" id="loginerr"></div>
+    <div class="field"><label>E-mail</label><input id="li_email" type="email" autocomplete="username" placeholder="voce@email.com" required></div>
+    <div class="field"><label>Senha</label><input id="li_senha" type="password" autocomplete="current-password" placeholder="sua senha" required></div>
+    <button class="btn" type="submit" id="li_btn">Entrar</button>
+  </form>
+</div>
+
+<div id="estado" style="display:none"><span class="spin"></span> Carregando dados da fazenda…</div>
 <div class="shell" id="shell" style="display:none">
   <nav class="side" id="side"></nav>
   <main class="main" id="conteudo"></main>
@@ -136,16 +156,53 @@
 // ============================================================
 const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
 const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
+const APP_SLUG="fazenda-realeza";
 const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes"];
 const L={};
 
-function req(path){
+// ---------- Sessão / login (Supabase Auth via REST) ----------
+let SESSION=null; const AUTH_KEY="fr_ger_sess";
+function saveSession(s){ SESSION=s; try{ localStorage.setItem(AUTH_KEY, JSON.stringify(s)); }catch(e){} }
+function loadSession(){ try{ const s=JSON.parse(localStorage.getItem(AUTH_KEY)||"null"); if(s&&s.access_token) SESSION=s; }catch(e){} }
+function clearSession(){ SESSION=null; try{ localStorage.removeItem(AUTH_KEY); }catch(e){} }
+function authPost(grant, body){
+  return new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();
+    x.open("POST", SB_URL+"/auth/v1/token?grant_type="+grant, true);
+    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Content-Type","application/json");
+    x.timeout=20000;
+    x.onload=()=>{ let d={}; try{ d=JSON.parse(x.responseText||"{}"); }catch(e){}
+      if(x.status>=200&&x.status<300&&d.access_token) resolve(d);
+      else reject(new Error(d.error_description||d.msg||d.error||"E-mail ou senha inválidos")); };
+    x.onerror=()=>reject(new Error("sem internet"));
+    x.ontimeout=()=>reject(new Error("tempo esgotado — sinal fraco"));
+    x.send(JSON.stringify(body));
+  });
+}
+async function entrar(email, senha){
+  const d=await authPost("password",{email:email,password:senha});
+  saveSession({access_token:d.access_token, refresh_token:d.refresh_token, expira:Date.now()+((d.expires_in||3600)*1000), email:(d.user&&d.user.email)||email});
+}
+async function garantirToken(){
+  if(!SESSION) throw new Error("sem_sessao");
+  if(Date.now() < SESSION.expira-60000) return SESSION.access_token;
+  const d=await authPost("refresh_token",{refresh_token:SESSION.refresh_token});
+  saveSession({access_token:d.access_token, refresh_token:d.refresh_token||SESSION.refresh_token, expira:Date.now()+((d.expires_in||3600)*1000), email:SESSION.email});
+  return SESSION.access_token;
+}
+function sair(){ clearSession(); location.hash=""; mostrarLogin(); }
+
+// ---------- leitura (anon p/ tabelas abertas; token p/ fiscal) ----------
+async function req(path, comToken){
+  let auth="Bearer "+SB_KEY;
+  if(comToken) auth="Bearer "+(await garantirToken());
   return new Promise((resolve,reject)=>{
     const x=new XMLHttpRequest();
     x.open("GET", SB_URL+path, true);
-    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+SB_KEY);
+    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization",auth);
     x.timeout=20000;
-    x.onload=()=>{ try{ resolve(JSON.parse(x.responseText||"[]")); }catch(e){ reject(e); } };
+    x.onload=()=>{ if(x.status===401) return reject(new Error("nao_autorizado"));
+      try{ resolve(JSON.parse(x.responseText||"[]")); }catch(e){ reject(e); } };
     x.onerror=()=>reject(new Error("sem internet ou sinal fraco"));
     x.ontimeout=()=>reject(new Error("tempo esgotado — sinal fraco"));
     x.send();
@@ -160,6 +217,29 @@ async function lerTabela(t){
     from+=page;
   }
   return all.map(r=>Object.assign({},r.doc,{id:r.id}));
+}
+async function lerTitulos(){
+  const cols="app_slug,id,tipo_titulo,tipo_doc,numero,serie,data_emissao,vencimento,valor,contraparte_nome,contraparte_doc,cfop,natureza,descricao,status,pago,data_pagamento,valor_pago";
+  return await req(`/rest/v1/gestao_titulos_por_app?app_slug=eq.${APP_SLUG}&select=${cols}&order=data_emissao.desc&limit=5000`, true);
+}
+
+function mostrarLogin(msg){
+  document.getElementById("shell").style.display="none";
+  document.getElementById("estado").style.display="none";
+  document.getElementById("topright").innerHTML="";
+  const lg=document.getElementById("login"); lg.style.display="flex";
+  const e=document.getElementById("loginerr");
+  if(msg){ e.textContent=msg; e.style.display="block"; } else e.style.display="none";
+  const b=document.getElementById("li_btn"); if(b){ b.disabled=false; b.textContent="Entrar"; }
+}
+async function fazerLogin(ev){
+  ev.preventDefault();
+  const email=document.getElementById("li_email").value.trim();
+  const senha=document.getElementById("li_senha").value;
+  const b=document.getElementById("li_btn"); b.disabled=true; b.textContent="Entrando…";
+  document.getElementById("loginerr").style.display="none";
+  try{ await entrar(email,senha); document.getElementById("login").style.display="none"; carregar(); }
+  catch(e){ mostrarLogin(e.message||"Não foi possível entrar."); }
 }
 
 // ---- helpers (iguais aos do app de campo, já testados) ----
@@ -202,7 +282,7 @@ function intervaloVazias6m(ciclos){
 // ---- seções ----
 const SECOES=[
   {id:"rebanho",       ic:"📊", nome:"Rebanho",       grupo:"Operação",   vivo:true },
-  {id:"financeiro",    ic:"💰", nome:"Financeiro",    grupo:"Gestão",     vivo:false},
+  {id:"financeiro",    ic:"💰", nome:"Financeiro",    grupo:"Gestão",     vivo:true },
   {id:"vendas",        ic:"💵", nome:"Vendas",        grupo:"Gestão",     vivo:false},
   {id:"compras",       ic:"🛒", nome:"Compras",       grupo:"Gestão",     vivo:false},
   {id:"maquinarios",   ic:"🚜", nome:"Maquinários",   grupo:"Gestão",     vivo:false},
@@ -212,15 +292,23 @@ const SECOES=[
 ];
 
 async function carregar(){
+  if(!SESSION){ mostrarLogin(); return; }
   const est=document.getElementById("estado"), shell=document.getElementById("shell");
+  document.getElementById("login").style.display="none";
   est.style.display="block"; shell.style.display="none";
   est.innerHTML='<span class="spin"></span> Carregando dados da fazenda…';
   try{
     for(const t of TABELAS) L[t]=await lerTabela(t);
+    L.titulos=await lerTitulos();
     est.style.display="none"; shell.style.display="flex";
-    document.getElementById("atualizado").textContent="atualizado "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    document.getElementById("topright").innerHTML=`
+      <span class="userchip">👤 <b>${esc(SESSION.email)}</b></span>
+      <span id="atualizado">atualizado ${new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>
+      <button class="btn ghost" onclick="carregar()">↻</button>
+      <button class="btn ghost" onclick="sair()">Sair</button>`;
     montarNav(); render();
   }catch(e){
+    if(e.message==="nao_autorizado"||e.message==="sem_sessao"){ clearSession(); return mostrarLogin("Sua sessão expirou. Entre de novo."); }
     est.innerHTML=`<div class="ic">📶</div><h2>Não deu para carregar agora</h2>
       <p class="muted" style="margin-top:6px">${esc(e.message||e)}. Os dados continuam seguros na nuvem.</p>
       <button class="btn" style="margin-top:14px" onclick="carregar()">Tentar de novo</button>`;
@@ -245,7 +333,7 @@ function render(){
   document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("active",n.dataset.sec===id));
   const c=document.getElementById("conteudo");
   const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig,
-    financeiro:pFinanceiro, vendas:pVendas, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
+    financeiro:renderFinanceiro, vendas:pVendas, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
   (map[id]||renderRebanho)(c);
   window.scrollTo(0,0);
 }
@@ -377,11 +465,12 @@ function renderConfig(c){
     <p class="muted">Edição dos dados da fazenda entra junto com o login (próximo passo).</p>
   </div>
   <div class="card">
-    <h3>Conexão com o banco</h3>
+    <h3>Conexão e conta</h3>
     <table><tbody>
       <tr><td>Situação</td><td><b style="color:var(--ok)">● Online</b></td></tr>
+      <tr><td>Usuário logado</td><td>${esc(SESSION?SESSION.email:"—")}</td></tr>
       <tr><td>Registros no banco</td><td class="num">${total} animais (${ativos} ativos)</td></tr>
-      <tr><td>Última leitura</td><td>${document.getElementById("atualizado").textContent.replace("atualizado ","")}</td></tr>
+      <tr><td>Títulos fiscais (SINTEGRA)</td><td class="num">${(L.titulos||[]).length}</td></tr>
     </tbody></table>
   </div>
   <div class="card">
@@ -391,8 +480,8 @@ function renderConfig(c){
     </tbody></table>
   </div>
   <div class="card" style="border-color:var(--ouro-cl);background:#fffdf6">
-    <h3>Próximo passo — Login por pessoa</h3>
-    <p class="muted" style="line-height:1.6">As seções que guardam dados (Financeiro, Vendas, Compras, Maquinários, Contabilidade) vão precisar de login pra proteger. Cada pessoa terá usuário e senha, e o banco recusa acesso de quem não tem permissão — o pessoal do campo continua sem login, só o escritório entra aqui. Quando você quiser começar a lançar dados de verdade, a gente liga isso.</p>
+    <h3>Login ativado ✓</h3>
+    <p class="muted" style="line-height:1.6">Este painel agora exige login. As notas fiscais (Financeiro) só aparecem para quem entra com a conta autorizada. O app de campo (curral) continua aberto, sem login, como antes.</p>
   </div>`;
 }
 
@@ -400,43 +489,45 @@ function renderConfig(c){
 function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt} O layout abaixo é uma prévia real do que vem; ainda não salva dados. <span class="muted">Ativamos com as tabelas do banco + login.</span></div>`; }
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
-function pFinanceiro(c){
-  const catOpt=["Insumos","Sal mineral","Vacinas/Medicamentos","Combustível","Salários","Manutenção","Venda de animais","Outros"].map(x=>`<option>${x}</option>`).join("");
+function renderFinanceiro(c){
+  const T=(L.titulos||[]);
+  const pagar=T.filter(t=>t.tipo_titulo==="pagar");
+  const receber=T.filter(t=>t.tipo_titulo==="receber");
+  const soma=arr=>arr.reduce((s,t)=>s+Number(t.valor||0),0);
+  const totPagar=soma(pagar), totReceber=soma(receber), saldo=totReceber-totPagar;
+  const dt=t=>t.data_emissao?fmtDate(String(t.data_emissao).slice(0,10)):"—";
+  const linha=t=>`<tr>
+      <td>${dt(t)}</td>
+      <td>${esc(t.contraparte_nome||"—")}</td>
+      <td>${esc(t.tipo_doc||"")}${t.numero?(" "+esc(t.numero)):""}</td>
+      <td class="money ${t.tipo_titulo==='pagar'?'neg':'pos'}" style="text-align:right">${fmtBRL(t.valor)}</td>
+      <td>${t.pago?'<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>':t.status==='lancado'?'<span class="tag" style="background:#fdf3e0;color:#9a6b1a">lançado</span>':'<span class="tag" style="background:#eef1f4;color:#56607a">novo</span>'}</td>
+    </tr>`;
+  const tabela=(arr,tit,cor)=>`
+    <div class="card">
+      <h3 style="color:${cor}">${tit} <span class="muted" style="font-weight:400">(${arr.length})</span></h3>
+      ${arr.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tit.includes('pagar')?'Fornecedor':'Cliente'}</th><th>Doc</th><th style="text-align:right">Valor</th><th>Situação</th></tr></thead>
+        <tbody>${arr.slice(0,60).map(linha).join("")}</tbody></table></div>
+        ${arr.length>60?`<p class="muted" style="margin-top:8px">Mostrando 60 de ${arr.length}. Baixe o Excel para a lista completa.</p>`:""}`
+        :'<div class="empty">Nenhum título.</div>'}
+    </div>`;
   c.innerHTML=`
   <div class="pgtitle">💰 Financeiro</div>
-  <div class="pgsub">Despesas e receitas da fazenda, com totais por mês e por categoria.</div>
-  ${ribbon("aqui você lança cada entrada e saída de dinheiro.")}
-  ${lockWrap(`
-    <div class="kpis" style="margin-bottom:18px">
-      <div class="kpi"><div class="v money pos">${fmtBRL(0)}</div><div class="l">Receitas do mês</div></div>
-      <div class="kpi"><div class="v money neg">${fmtBRL(0)}</div><div class="l">Despesas do mês</div></div>
-      <div class="kpi"><div class="v money">${fmtBRL(0)}</div><div class="l">Saldo do mês</div></div>
+  <div class="pgsub">Contas a pagar e a receber — vindas do <b>SINTEGRA Lamarta</b> (notas fiscais). Atualiza sozinho a cada nota nova.</div>
+  <div class="card">
+    <div class="kpis">
+      <div class="kpi"><div class="v money neg">${fmtBRL(totPagar)}</div><div class="l">A pagar</div><div class="d">${pagar.length} título(s)</div></div>
+      <div class="kpi"><div class="v money pos">${fmtBRL(totReceber)}</div><div class="l">A receber</div><div class="d">${receber.length} título(s)</div></div>
+      <div class="kpi"><div class="v money" style="color:${saldo>=0?'var(--ok)':'var(--erro)'}">${fmtBRL(saldo)}</div><div class="l">Saldo previsto</div></div>
     </div>
-    <div class="card">
-      <h3>Novo lançamento</h3>
-      <div class="grid">
-        <div class="field"><label>Data</label><input type="date"></div>
-        <div class="field"><label>Tipo</label><select><option>Despesa</option><option>Receita</option></select></div>
-        <div class="field"><label>Categoria</label><select>${catOpt}</select></div>
-        <div class="field"><label>Valor (R$)</label><input type="number" placeholder="0,00"></div>
-      </div>
-      <div class="field"><label>Descrição</label><input placeholder="ex.: 20 sacos de sal mineral"></div>
-      <button class="btn">Salvar lançamento</button>
-    </div>
-    <div class="card">
-      <h3>Lançamentos do mês</h3>
-      <table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>
-        <tr><td>05/08/2026</td><td>Sal mineral</td><td>20 sacos</td><td class="money neg">− ${fmtBRL(2400)}</td></tr>
-        <tr><td>12/08/2026</td><td>Venda de animais</td><td>3 bois</td><td class="money pos">+ ${fmtBRL(15900)}</td></tr>
-        <tr><td>15/08/2026</td><td>Combustível</td><td>Diesel trator</td><td class="money neg">− ${fmtBRL(680)}</td></tr>
-      </tbody></table>
-    </div>`)}
-  <div class="card"><h3>O que esta seção fará</h3><ul class="willdo">
-    <li>Registrar cada despesa e receita com data, categoria e valor.</li>
-    <li>Somar automaticamente por mês e por categoria (pra onde vai o dinheiro).</li>
-    <li>Receber sozinho os lançamentos de Vendas (receita) e Compras (despesa).</li>
-    <li>Exportar o caixa do período pra Excel.</li>
-  </ul></div>`;
+    <div class="exports" style="margin-top:14px"><button class="btn gold" onclick="exportar('titulos')">⬇️ Baixar títulos (Excel)</button></div>
+  </div>
+  ${tabela(receber,"Contas a receber","var(--ok)")}
+  ${tabela(pagar,"Contas a pagar","var(--erro)")}
+  <div class="card" style="border-color:var(--ouro-cl);background:#fffdf6">
+    <h3>Próximo passo — lançar e dar baixa</h3>
+    <p class="muted" style="line-height:1.6">Por enquanto esta tela <b>mostra</b> os títulos que o SINTEGRA envia. O próximo passo é permitir <b>lançar</b> (marcar como registrado na gestão) e <b>dar baixa</b> (marcar pago, com data e conta) — aí o SINTEGRA concilia sozinho. É só me avisar quando quiser ativar.</p>
+  </div>`;
 }
 
 function pVendas(c){
@@ -642,10 +733,14 @@ function exportar(qual){
     L.reproducao.map(r=>[nome(r.animal_id),r.ciclo??"",r.tipo==="iatf"?"IATF":"Monta",r.touro_nome||"",r.equipe_nome||"",r.fase||"",r.resultado_prenhez===true?"prenhe":r.resultado_prenhez===false?"vazia":"",fmtDate(r.data_cobertura),fmtDate(r.data_diagnostico)]));
   else if(qual==="descarte"){ const d=(window.__reb||{}).descarte||[];
     baixarCSV(`descarte-${hoje}.csv`,["Numero","Categoria","Idade","Motivo"], d.map(x=>[x.f.numero??"",categoriaAnimal(x.f),idadeTxt(x.f.data_nascimento),x.motivo])); }
+  else if(qual==="titulos"){ const T=L.titulos||[];
+    baixarCSV(`titulos-${hoje}.csv`,["Tipo","Emissao","Vencimento","Contraparte","CPF/CNPJ","Documento","Numero","Valor","CFOP","Natureza","Status","Pago","Data pagamento"],
+      T.map(t=>[t.tipo_titulo==="pagar"?"A pagar":"A receber",fmtDate(String(t.data_emissao||"").slice(0,10)),fmtDate(t.vencimento),t.contraparte_nome||"",t.contraparte_doc||"",t.tipo_doc||"",t.numero||"",Number(t.valor||0).toFixed(2).replace(".",","),t.cfop||"",t.natureza||"",t.status||"",t.pago?"sim":"",fmtDate(t.data_pagamento)])); }
 }
 
-window.addEventListener("hashchange", render);
-carregar();
+window.addEventListener("hashchange", ()=>{ if(document.getElementById("shell").style.display!=="none") render(); });
+loadSession();
+if(SESSION) carregar(); else mostrarLogin();
 </script>
 </body>
 </html>
