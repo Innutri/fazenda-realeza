@@ -26,6 +26,9 @@
   header.top h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.3px}
   header.top h1 small{display:block;font-size:11px;font-weight:400;color:var(--ouro-cl);letter-spacing:2px;text-transform:uppercase}
   header.top .status{margin-left:auto;font-size:12px;opacity:.9;display:flex;align-items:center;gap:6px}
+  .balchip{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;border-radius:20px;padding:5px 11px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
+  .balchip .dot{width:10px;height:10px}
+  .balchip:active{transform:translateY(1px)}
   .dot{width:9px;height:9px;border-radius:50%;background:#8a8;display:inline-block}
   .dot.on{background:#7CFC9A;box-shadow:0 0 6px #7CFC9A}
   .dot.off{background:#ff8a8a}
@@ -224,6 +227,7 @@
   <h1>Fazenda Realeza<small>Gestão do Rebanho</small></h1>
   <span id="save-indicator" class="saveind" title="Estado da gravação">pronto</span>
   <div class="status" title="Dados salvos no Supabase (nuvem)."><span id="conn-dot" class="dot"></span><span id="conn-txt">conectando…</span></div>
+  <button class="balchip" id="bal-chip" type="button" onclick="balancaConectarBLE()" title="Conexão com a balança (toque para conectar)"><span id="bal-chip-dot" class="dot"></span>⚖️ <span id="bal-chip-txt">balança</span></button>
 </header>
 
 <nav class="tabs" id="main-tabs">
@@ -512,19 +516,58 @@ const Balanca = (function(){
     emitStatus();
   }
 
-  // Chamadas vindas do APK — nomes fixos, NÃO renomear:
-  window.balancaPeso = function(peso, _eid){
-    try{
-      peso = ("" + peso).replace(",", ".");
-      st.ultimoPeso = peso; st.conectado = true;
-      subsPeso.forEach(f=>{ try{ f(peso); }catch(e){} });
-      emitStatus();
-    }catch(e){}
-  };
+  // recebe um peso de qualquer fonte (BLE da S3 ou APK antigo)
+  function recebePeso(peso){
+    peso = ("" + peso).replace(",", ".");
+    st.ultimoPeso = peso; st.conectado = true;
+    subsPeso.forEach(f=>{ try{ f(peso); }catch(e){} });
+    emitStatus();
+  }
+  // Chamadas vindas do APK antigo — nomes fixos:
+  window.balancaPeso = function(peso, _eid){ try{ recebePeso(peso); }catch(e){} };
   window.balancaStatus = setStatus;
 
+  // ---- Balança S3 pelo Bluetooth do navegador (Web Bluetooth / BLE) ----
+  const BLE = { SVC:0x181D, MEAS:0x2A9D, BATT_SVC:0x180F, BATT_LVL:0x2A19 };
+  let bleDev = null;
+  async function conectarBLE(){
+    if(!navigator.bluetooth) throw new Error("Este navegador não tem Bluetooth. Abra no Chrome do Android.");
+    st.modo = "procurando…"; emitStatus();
+    const dev = await navigator.bluetooth.requestDevice({
+      filters:[{services:[BLE.SVC]},{namePrefix:'S3'}],
+      optionalServices:[BLE.SVC, BLE.BATT_SVC]
+    });
+    bleDev = dev;
+    dev.addEventListener('gattserverdisconnected', ()=>{ st.conectado=false; st.modo="desconectada"; emitStatus(); });
+    st.modo = "conectando…"; emitStatus();
+    const server = await dev.gatt.connect();
+    const s = await server.getPrimaryService(BLE.SVC);
+    const c = await s.getCharacteristic(BLE.MEAS);
+    await c.startNotifications();
+    c.addEventListener('characteristicvaluechanged', ev=>{
+      const dv = ev.target.value;
+      const flags = dv.getUint8(0);
+      const raw = dv.getUint16(1, true);
+      let kg = (flags & 0x1) ? (raw*0.01*0.45359237) : (raw*0.05);  // S3: 0,05 kg por passo
+      kg = Math.round(kg*10)/10;
+      recebePeso(kg);
+    });
+    try{ // bateria (opcional)
+      const bs = await server.getPrimaryService(BLE.BATT_SVC);
+      const bc = await bs.getCharacteristic(BLE.BATT_LVL);
+      const bv = await bc.readValue(); st.bateria = bv.getUint8(0);
+      await bc.startNotifications(); bc.addEventListener('characteristicvaluechanged', e=>{ st.bateria = e.target.value.getUint8(0); emitStatus(); });
+    }catch(_){}
+    st.conectado = true; st.modo = "S3 · Bluetooth"; emitStatus();
+    return true;
+  }
+  function desconectarBLE(){ try{ if(bleDev && bleDev.gatt.connected) bleDev.gatt.disconnect(); }catch(e){} bleDev=null; st.conectado=false; st.modo="desconectada"; emitStatus(); }
+
   return {
-    nativa(){ return !!bridge(); },                      // estamos dentro do APK?
+    nativa(){ return !!bridge(); },                      // dentro do APK antigo?
+    bleDisponivel(){ return !!navigator.bluetooth; },    // navegador tem Bluetooth?
+    conectada(){ return !!st.conectado; },
+    conectarBLE, desconectarBLE,
     status(){ return Object.assign({}, st); },           // cópia do estado atual
     onPeso(f){ subsPeso.push(f); },                      // assinar: chegou peso
     onStatus(f){ subsStatus.push(f); },                  // assinar: mudou status
@@ -544,6 +587,12 @@ const Balanca = (function(){
 
 // ---- Ligação do APP com a balança (o ÚNICO ponto de contato) ----
 Balanca.onStatus(s=>{ const el = document.getElementById("bal-live"); if(el) el.innerHTML = _balLiveHtml(s); });
+// bolinha da balança no topo (visível em todas as telas, mostra o peso ao vivo)
+Balanca.onStatus(s=>{
+  const d = document.getElementById("bal-chip-dot"); if(d) d.className = "dot" + (s.conectado ? " on" : "");
+  const t = document.getElementById("bal-chip-txt");
+  if(t) t.textContent = s.conectado ? (s.ultimoPeso ? (s.ultimoPeso + " kg") : "conectada") : (s.modo==="procurando…"||s.modo==="conectando…" ? s.modo : "balança");
+});
 Balanca.onPeso(peso=>{
   const p = document.getElementById("mo_peso");
   if(p){
@@ -1529,39 +1578,46 @@ function _balLiveHtml(s){
   s = s || Balanca.status();
   const on = !!s.conectado;
   const cor = on ? "var(--ok)" : "var(--txt2)";
-  const txt = on ? ("Conectada"+(s.modo?(" ("+esc(s.modo)+")"):"")) : "Aguardando a balança conectar…";
-  const peso = s.ultimoPeso ? `<div style="font-size:30px;font-weight:800;color:var(--verde);margin-top:4px">${esc(s.ultimoPeso)} kg <span class="muted" style="font-size:13px;font-weight:400">— último peso recebido</span></div>` : `<div class="muted" style="margin-top:4px">Nenhum peso recebido ainda. Registre um peso na balança.</div>`;
+  const txt = on ? ("Conectada"+(s.modo?(" · "+esc(s.modo)):"")) : (s.modo && s.modo!=="desconectada" ? esc(s.modo) : "Balança desconectada");
+  const bat = (s.bateria!=null) ? `<span class="muted" style="font-size:12px;margin-left:8px">🔋 ${esc(s.bateria)}%</span>` : "";
+  const peso = s.ultimoPeso ? `<div style="font-size:34px;font-weight:800;color:var(--verde);margin-top:6px">${esc(s.ultimoPeso)} kg <span class="muted" style="font-size:13px;font-weight:400">— último peso</span></div>` : `<div class="muted" style="margin-top:4px">Nenhum peso ainda. Suba um animal na balança.</div>`;
   return `<div style="display:flex;align-items:center;gap:10px;margin:6px 0">
       <span style="width:16px;height:16px;border-radius:50%;background:${cor};display:inline-block"></span>
-      <b style="color:${cor};font-size:16px">${txt}</b></div>${peso}`;
+      <b style="color:${cor};font-size:16px">${txt}</b>${bat}</div>${peso}`;
 }
-// Botões da tela (só repassam pro módulo Balanca):
+// Botões da tela:
 function balancaVerificar(){ if(Balanca.verificar()) toast("Status atualizado.","ok"); }
 function balancaConectar(){ if(Balanca.conectar()) toast("Tentando conectar na balança…","ok"); }
+function balancaConectarBLE(){
+  const btn = document.getElementById("bal-conn-btn");
+  if(btn){ btn.disabled=true; btn.textContent="Conectando…"; }
+  Balanca.conectarBLE()
+    .then(()=>toast("Balança S3 conectada!","ok"))
+    .catch(e=>{ const m=(e&&e.message)?e.message:String(e); if(!/cancel/i.test(m)) toast("Não conectou: "+m,"err"); })
+    .finally(()=>{ const b=document.getElementById("bal-conn-btn"); if(b){ b.disabled=false; b.textContent=Balanca.conectada()?"🔄 Reconectar balança S3":"🔗 Conectar balança S3"; } });
+}
 function renderBalanca(){
-  const nativo = Balanca.nativa();
-  const liveCard = nativo ? `
+  const ble = Balanca.bleDisponivel();
+  const liveCard = `
   <div class="card">
-    <h3>⚖️ Conexão com a balança (ao vivo)</h3>
+    <h3>⚖️ Balança S3 — peso ao vivo (Bluetooth)</h3>
     <div id="bal-live">${_balLiveHtml(Balanca.status())}</div>
-    <div class="actions" style="margin-top:10px">
-      <button class="btn gold" type="button" onclick="balancaVerificar()">🔄 Verificar conexão</button>
-      <button class="btn" type="button" onclick="balancaConectar()">Conectar / reconectar</button>
+    <div class="actions" style="margin-top:12px">
+      ${ble
+        ? `<button class="btn gold" id="bal-conn-btn" type="button" onclick="balancaConectarBLE()">${Balanca.conectada()?"🔄 Reconectar balança S3":"🔗 Conectar balança S3"}</button>`
+        : `<span class="muted" style="font-size:14px">Este navegador não tem Bluetooth. Abra o app no <b>Chrome do Android</b> para conectar a balança.</span>`}
     </div>
-    <p class="muted" style="font-size:13px;margin-top:8px">Deixe o app aberto durante a pesagem. Abra o animal no Operacional e, ao registrar o peso na balança, ele preenche sozinho.</p>
-  </div>` : `
-  <div class="card">
-    <h3>⚖️ Conexão com a balança (ao vivo)</h3>
-    <p class="muted" style="font-size:15px;line-height:1.55">A conexão automática por Bluetooth funciona dentro do <b>app "Fazenda Realeza - Balança"</b> (APK Android). Você está no navegador comum — aqui use a <b>importação por arquivo</b> abaixo, ou abra pelo app. <a href="https://github.com/Innutri/fazenda-realeza/releases/latest" target="_blank">Baixar o app</a>.</p>
+    <p class="muted" style="font-size:13px;line-height:1.55;margin-top:10px">
+      Ligue a balança S3 e deixe o <b>Bluetooth</b> e a <b>Localização</b> do celular ligados. Toque em Conectar e escolha <b>S3</b> na lista.
+      Depois abra o animal no <b>Operacional</b> e suba ele na balança — o <b>peso cai sozinho</b> na ficha. Deixe o app aberto durante a pesagem.
+    </p>
   </div>`;
   app.innerHTML = liveCard + `
   <div class="card">
-    <h3>⚖️ Importar pesos da balança (XR5000)</h3>
+    <h3>⚖️ Importar pesos por arquivo (opcional)</h3>
     <p class="muted" style="font-size:15px;line-height:1.55">
-      A XR5000 usa Bluetooth antigo, que o navegador do celular não consegue acessar.
-      O jeito certo é <b>exportar a sessão de pesagem</b> da balança — por <b>pen drive USB</b> na própria balança,
-      ou pela nuvem/app Datamars — e subir o arquivo aqui. O app preenche os pesos sozinho,
-      casando pelo <b>número do animal</b>.
+      Se você tiver um <b>arquivo de pesagem</b> (CSV/TXT) exportado de uma balança, suba aqui —
+      o app preenche os pesos sozinho, casando pelo <b>número do animal</b>.
     </p>
     <div class="grid">
       <div class="field">
@@ -1581,7 +1637,6 @@ function renderBalanca(){
     <div id="bal-map"></div>
     <div id="bal-prev"></div>
   </div>`;
-  if(nativo){ Balanca.verificar(); Balanca.iniciarPoll(); }
 }
 function _balDetect(line){
   const c=[[';',line.split(';').length],[',',line.split(',').length],['\t',line.split('\t').length],[' ',line.trim().split(/\s+/).length]];
