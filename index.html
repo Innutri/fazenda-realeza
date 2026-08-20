@@ -1268,7 +1268,7 @@ function renderLotesAbertos(){
       const acao=l.status==="aberto"
         ? `<button class="btn sec" style="width:auto" onclick='retomarEmbarque("${l.id}")'>Continuar</button>`
         : `<button class="btn sec" style="width:auto" onclick='relatorioEmbarque("${l.id}")'>Relatório / carcaça</button>`;
-      return `<div class="emb-item" style="flex-wrap:wrap"><span><b>${esc(l.frigorifico)}</b> ${st}<br><span class="muted">${info} · ${fmtDate(l.data_embarque)}</span></span>${acao}</div>`;
+      return `<div class="emb-item" style="flex-wrap:wrap"><span><b>${esc(l.frigorifico)}</b> ${st}<br><span class="muted">${info} · ${fmtDate(l.data_embarque)}</span></span><span style="display:flex;gap:8px;flex-wrap:wrap">${acao}<button class="btn danger sm" style="width:auto" onclick='excluirLote("${l.id}")'>Excluir</button></span></div>`;
     }).join("")}
   </div>`;
 }
@@ -1526,6 +1526,7 @@ function relatorioEmbarque(id){
     <div class="actions no-print" style="flex-wrap:wrap;gap:8px">
       <button class="btn" style="width:auto" onclick='compartilharEmbarque("${id}")'>📲 Compartilhar (WhatsApp)</button>
       <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      <button class="btn danger sm" style="width:auto" onclick='excluirLote("${id}")'>🗑️ Excluir lote</button>
     </div>
     ${lote.status==="fechado"?`<div class="card no-print" style="margin-top:14px;background:#fff8e6;border-color:#e6cf8a">
       <h3>Rendimento de carcaça</h3>
@@ -1554,6 +1555,19 @@ async function lancarCarcaca(id){
   Object.assign(lote,upd);
   toast(`Rendimento de carcaça: ${rend}%`,"ok");
   relatorioEmbarque(id);
+}
+async function excluirLote(id){
+  const lote=loteById(id);
+  const nome=lote?lote.frigorifico:"";
+  const cab=lote&&lote.animais?lote.animais.length:0;
+  const aviso = cab>0 ? `\n\nAtenção: os ${cab} animais deste embarque NÃO voltam para o rebanho automaticamente.` : "";
+  if(!confirm(`Excluir o lote de abate${nome?` "${nome}"`:""}? Esta ação não pode ser desfeita.${aviso}`)) return;
+  const { error } = await RS.from("lotes").delete().eq("id",id);
+  if(error) return toast("Não foi possível excluir ("+msgErro(error)+"). Tente de novo.","err");
+  LOCAL.lotes=(LOCAL.lotes||[]).filter(l=>l.id!==id);
+  if(embarqueId===id) embarqueId=null;
+  flashSave(); toast("Lote excluído.","");
+  render();
 }
 function diffDias(d1,d2){ return Math.round((new Date(d2)-new Date(d1))/86400000); }
 function calcGMD(ops){
