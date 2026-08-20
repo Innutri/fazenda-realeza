@@ -142,6 +142,10 @@
   .emb-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--linha);border-radius:8px;margin-top:6px;font-size:14px}
   .emb-item button{background:#fdeaea;color:var(--erro);border:1px solid #f2c9c9;border-radius:6px;padding:5px 9px;font-weight:700;cursor:pointer}
   @media print{ body *{visibility:hidden} #print-area,#print-area *{visibility:visible} #print-area{position:absolute;left:0;top:0;width:100%;padding:10px} .no-print{display:none !important} }
+  .alerta-mini{background:#fff8e6;border:1px solid #e6cf8a;color:#6b5313;border-radius:10px;padding:10px 12px;font-size:14px;margin:8px 0;line-height:1.35}
+  .alerta-mini.ok{background:#e1f4e6;border-color:#bfe3cc;color:#1f7a45}
+  .va-vrow input{border:1px solid var(--linha);border-radius:8px;padding:8px}
+  .va-vrow button{background:#fdeaea;color:var(--erro);border:1px solid #f2c9c9;border-radius:8px;padding:6px 10px;font-weight:800;cursor:pointer}
 
   .empty{text-align:center;color:var(--txt2);padding:30px;font-size:13px}
   .placeholder{text-align:center;padding:50px 20px;color:var(--txt2)}
@@ -1406,41 +1410,121 @@ async function salvarCompraAnimal(){
   toast(`Animal nº ${numero} cadastrado.`,"ok");
   telaCompraAnimal();
 }
+function textoRelatorioCompra(st){
+  const cp=st.feitos.filter(f=>f.peso!=null);
+  const media=cp.length?Math.round(cp.reduce((s,f)=>s+f.peso,0)/cp.length*10)/10:null;
+  let t=`*COMPRA DE ANIMAIS*\n`;
+  t+=`Data: ${fmtDate(new Date().toISOString().slice(0,10))}\n`;
+  t+=`Animais: ${st.feitos.length}\n`;
+  if(media!=null) t+=`Peso médio: ${media} kg\n`;
+  t+=`\n`+st.feitos.map(f=>`nº ${f.numero} (${f.tipo}): ${f.peso!=null?f.peso+" kg":"s/ peso"}`).join("\n");
+  t+=`\n\n— Fazenda Realeza`;
+  return t;
+}
+async function compartilharCompra(){
+  const st=compraState; if(!st) return;
+  const txt=textoRelatorioCompra(st);
+  try{ if(navigator.share){ await navigator.share({ text:txt }); return; } }catch(_){}
+  try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
+  try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
+}
 function telaCompraResumo(){
   const st=compraState; if(!st) return render();
   const comPeso=st.feitos.filter(f=>f.peso!=null);
-  const media=comPeso.length?Math.round(comPeso.reduce((s,f)=>s+f.peso,0)/comPeso.length*10)/10:null;
+  const total=comPeso.reduce((s,f)=>s+f.peso,0);
+  const media=comPeso.length?Math.round(total/comPeso.length*10)/10:null;
   app.innerHTML=`<div class="card">
-    <h3>✅ Compra registrada</h3>
-    <p class="muted">${st.feitos.length} ${st.feitos.length===1?"animal cadastrado":"animais cadastrados"} como <b>compra</b>.${media!=null?` Peso médio: <b>${media} kg</b>.`:""}</p>
-    <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Peso</th></tr></thead>
-    <tbody>${st.feitos.map(f=>`<tr><td data-label="Nº"><b>${f.numero}</b></td><td data-label="Tipo">${f.tipo}</td><td data-label="Peso">${f.peso!=null?f.peso+" kg":"—"}</td></tr>`).join("")}</tbody></table></div>
-    <div class="actions"><button class="btn" onclick="render()">Concluir</button></div>
+    <div class="wizard-head no-print"><h3>✅ Compra registrada</h3></div>
+    <div id="print-area">
+      <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Compra de animais</h2>
+      <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))}</p>
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi"><div class="n">${st.feitos.length}</div><div class="l">Animais</div></div>
+        <div class="kpi"><div class="n">${media!=null?media:"—"}</div><div class="l">Peso médio (kg)</div></div>
+        <div class="kpi"><div class="n">${comPeso.length?Math.round(total*10)/10:"—"}</div><div class="l">Peso total (kg)</div></div>
+      </div>
+      <div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Peso</th></tr></thead>
+      <tbody>${st.feitos.map(f=>`<tr><td data-label="Nº"><b>${f.numero}</b></td><td data-label="Tipo">${f.tipo}</td><td data-label="Peso">${f.peso!=null?f.peso+" kg":"—"}</td></tr>`).join("")}</tbody></table></div>
+    </div>
+    <div class="actions no-print" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" style="width:auto" onclick="compartilharCompra()">📲 Compartilhar (WhatsApp)</button>
+      <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      <button class="btn sec" style="width:auto" onclick="render()">Concluir</button>
+    </div>
   </div>`;
-  compraState=null;
 }
 
 // ---------- VENDA PARA ABATE ----------
 function loteById(id){ return (LOCAL.lotes||[]).find(l=>l.id===id); }
+// A que veículo pertence o animal na posição `pos` (preenche na ordem de embarque)
+function veiculoDaPosicao(veiculos, pos){
+  let acc=0;
+  for(let k=0;k<(veiculos||[]).length;k++){ acc+=(veiculos[k].capacidade||0); if(pos<acc) return k; }
+  return Math.max(0,(veiculos||[]).length-1);
+}
+function statusVeiculos(lote){
+  const vs=lote.veiculos||[]; const E=(lote.animais||[]).length;
+  const meta=vs.reduce((s,v)=>s+(v.capacidade||0),0);
+  let acc=0, atual=null, cumAtual=meta;
+  for(let k=0;k<vs.length;k++){ acc+=(vs[k].capacidade||0); if(E<acc){ atual=k; cumAtual=acc; break; } }
+  if(atual===null){ atual=Math.max(0,vs.length-1); cumAtual=meta; }
+  return { vs, meta, E, atual, cumAtual, faltamAtual:Math.max(0,cumAtual-E), cheios:meta>0&&E>=meta };
+}
+function animaisPorVeiculo(lote){
+  const vs=lote.veiculos||[]; const g=vs.map(()=>[]);
+  (lote.animais||[]).forEach((a,i)=>{ const k=veiculoDaPosicao(vs,i); if(g[k]) g[k].push(a); });
+  return g;
+}
+function resumoVeiculos(lote){
+  if(!lote.veiculos||!lote.veiculos.length) return [];
+  const g=animaisPorVeiculo(lote);
+  return lote.veiculos.map((v,k)=>{ const arr=g[k]||[]; const cp=arr.filter(a=>a.peso!=null); const med=cp.length?Math.round(cp.reduce((s,a)=>s+a.peso,0)/cp.length*10)/10:null; return {nome:`${v.nome} ${k+1}`, cap:v.capacidade, n:arr.length, media:med}; });
+}
 function iniciarVendaAbate(){
   app.innerHTML=`<div class="card">
     <div class="wizard-head"><button class="voltar" onclick="render()">← Voltar</button><h3>🚚 Venda para abate</h3></div>
-    <p class="muted">Quantos animais serão embarcados e para qual frigorífico?</p>
-    <div class="grid">
-      <div class="field"><label>Quantidade de animais</label><input id="va_qtd" type="number" inputmode="numeric" min="1" placeholder="ex: 40" style="font-size:26px;font-weight:800;text-align:center"></div>
-      <div class="field"><label>Frigorífico</label><input id="va_frig" placeholder="ex: JBS, Marfrig..."></div>
-    </div>
+    <p class="muted">Frigorífico e os veículos do embarque. O app conta por veículo e avisa quando cada um completa.</p>
+    <div class="field"><label>Frigorífico</label><input id="va_frig" placeholder="ex: JBS, Marfrig..."></div>
+    <label style="display:block;margin-top:12px;font-size:12.5px;color:var(--txt2);font-weight:700">Veículos (tipo e nº de cabeças)</label>
+    <div id="va_veiculos"></div>
+    <button class="btn sec" style="width:auto;margin-top:8px" onclick="addVeiculoRow()">➕ Adicionar veículo</button>
+    <p class="muted" id="va_total" style="margin-top:8px"></p>
     <div class="actions"><button class="btn" onclick="comecarEmbarque()">Iniciar embarque</button></div>
   </div>`;
-  const i=document.getElementById("va_qtd"); if(i) i.focus();
+  addVeiculoRow('Caminhão',20);
+}
+function veiculoRowHtml(nome,cap){
+  return `<div class="emb-item va-vrow" style="gap:8px">
+    <input class="va-vnome" value="${esc(nome||'')}" placeholder="Caminhão / Carreta / Julieta" style="flex:1;min-width:110px" oninput="atualizaTotalVeiculos()">
+    <input class="va-vcap" type="number" inputmode="numeric" min="1" value="${cap||''}" placeholder="cab" style="width:80px" oninput="atualizaTotalVeiculos()">
+    <button type="button" title="remover" onclick="this.closest('.va-vrow').remove();atualizaTotalVeiculos()">✕</button>
+  </div>`;
+}
+function addVeiculoRow(nome,cap){
+  const box=document.getElementById('va_veiculos'); if(!box) return;
+  if(nome===undefined) nome='Caminhão'; if(cap===undefined) cap=20;
+  box.insertAdjacentHTML('beforeend', veiculoRowHtml(nome,cap));
+  atualizaTotalVeiculos();
+}
+function lerVeiculos(){
+  return [...document.querySelectorAll('#va_veiculos .va-vrow')].map(r=>({
+    nome:(r.querySelector('.va-vnome').value||'').trim()||'Veículo',
+    capacidade: parseInt(r.querySelector('.va-vcap').value)||0
+  })).filter(v=>v.capacidade>0);
+}
+function atualizaTotalVeiculos(){
+  const el=document.getElementById('va_total'); if(!el) return;
+  const vs=lerVeiculos(); const tot=vs.reduce((s,v)=>s+v.capacidade,0);
+  el.innerHTML = vs.length? `Total: <b>${tot}</b> cabeças em ${vs.length} veículo(s).` : `Adicione ao menos um veículo com nº de cabeças.`;
 }
 async function comecarEmbarque(){
-  const n=parseInt((document.getElementById("va_qtd")||{}).value);
   const frig=((document.getElementById("va_frig")||{}).value||"").trim();
-  if(!n||n<1) return toast("Informe a quantidade de animais.","err");
   if(!frig) return toast("Informe o frigorífico.","err");
+  const veiculos=lerVeiculos();
+  if(!veiculos.length) return toast("Adicione ao menos um veículo com nº de cabeças.","err");
+  const meta=veiculos.reduce((s,v)=>s+v.capacidade,0);
   const hoje=new Date().toISOString().slice(0,10);
-  const doc={ tipo:"venda_abate", status:"aberto", frigorifico:frig, meta_cabecas:n, data_embarque:hoje, animais:[] };
+  const doc={ tipo:"venda_abate", status:"aberto", frigorifico:frig, veiculos, meta_cabecas:meta, data_embarque:hoje, animais:[] };
   const { data:novo, error } = await sb.from("lotes").insert(doc);
   if(error) return toast("Erro ao criar embarque: "+msgErro(error),"err");
   embarqueId=novo[0].id;
@@ -1449,19 +1533,31 @@ async function comecarEmbarque(){
 function retomarEmbarque(id){ embarqueId=id; telaEmbarque(); }
 function telaEmbarque(){
   const lote=loteById(embarqueId); if(!lote) return render();
-  const emb=lote.animais||[]; const meta=lote.meta_cabecas||0;
-  const pct=meta?Math.round(emb.length/meta*100):0;
+  const emb=lote.animais||[];
+  const S=statusVeiculos(lote);
+  const grupos=animaisPorVeiculo(lote);
+  const vsHtml=(lote.veiculos||[]).map((v,k)=>{
+    const n=(grupos[k]||[]).length; const full=n>=v.capacidade;
+    const marca = full? '✅' : (k===S.atual&&!S.cheios? '⬅️ atual' : '');
+    return `<div class="emb-item" style="${k===S.atual&&!S.cheios?'border-color:var(--verde2);background:#f2faf5':''}"><span><b>${esc(v.nome)} ${k+1}</b> · ${n}/${v.capacidade} ${marca}</span></div>`;
+  }).join("");
+  const temV = lote.veiculos && lote.veiculos.length;
+  const aviso = !temV ? '' : (S.cheios
+    ? `<div class="alerta-mini ok">✅ Todos os veículos completos (${S.E}/${S.meta}). Toque em Fechar embarque.</div>`
+    : `<div class="alerta-mini">Enchendo <b>${esc(S.vs[S.atual].nome)} ${S.atual+1}</b> — faltam <b>${S.faltamAtual}</b> cabeça(s) para completar.</div>`);
   app.innerHTML=`<div class="card">
     <div class="wizard-head"><button class="voltar" onclick="render()">← Sair</button><h3>🚚 Embarque — ${esc(lote.frigorifico)}</h3></div>
-    <p class="muted">Embarcados <b>${emb.length}</b> de ${meta} cabeças${lote.data_embarque?` · ${fmtDate(lote.data_embarque)}`:""}.</p>
-    <div class="prog"><i style="width:${Math.min(pct,100)}%"></i></div>
-    <div class="grid">
+    <p class="muted">Total <b>${S.E}</b> de ${S.meta} cabeças${lote.data_embarque?` · ${fmtDate(lote.data_embarque)}`:""}.</p>
+    <div class="prog"><i style="width:${S.meta?Math.min(Math.round(S.E/S.meta*100),100):0}%"></i></div>
+    ${aviso}
+    <div class="grid" style="margin-top:8px">
       <div class="field"><label>Nº do animal</label><input id="emb_num" type="number" inputmode="numeric" enterkeyhint="done" style="font-size:26px;font-weight:800;text-align:center"></div>
       <div class="field"><label>Peso (kg)</label><input id="emb_peso" type="number" step="0.1" inputmode="decimal" placeholder="balança/digite" style="background:#fff59d;border-color:var(--ouro);border-width:2px;font-size:22px;font-weight:800;text-align:center"></div>
     </div>
     <div class="actions"><button class="btn" onclick="embarcarAnimal()">➕ Embarcar animal</button></div>
+    ${vsHtml?`<div class="divider"></div><h4 style="font-size:13px;color:var(--verde2);margin-bottom:4px">Veículos</h4>${vsHtml}`:""}
     <div class="divider"></div>
-    <div id="emb-lista">${emb.length? emb.map((a,i)=>`<div class="emb-item"><span><b>nº ${a.numero}</b> · ${a.peso!=null?a.peso+" kg":"s/ peso"}</span><button onclick="removerEmbarque(${i})">remover</button></div>`).join("") : `<p class="muted">Nenhum animal embarcado ainda.</p>`}</div>
+    <div id="emb-lista">${emb.length? emb.map((a,i)=>{const k=veiculoDaPosicao(lote.veiculos,i);const vn=(lote.veiculos&&lote.veiculos[k])?`${lote.veiculos[k].nome} ${k+1}`:'';return `<div class="emb-item"><span><b>nº ${a.numero}</b> · ${a.peso!=null?a.peso+" kg":"s/ peso"}${vn?` <span class="muted">· ${esc(vn)}</span>`:''}</span><button onclick="removerEmbarque(${i})">remover</button></div>`;}).join("") : `<p class="muted">Nenhum animal embarcado ainda.</p>`}</div>
     <div class="actions" style="margin-top:14px"><button class="btn danger" onclick="fecharEmbarque()">🏁 Fechar embarque</button></div>
   </div>`;
   const i=document.getElementById("emb_num"); if(i) i.focus();
@@ -1472,6 +1568,9 @@ async function embarcarAnimal(){
   const pv=(document.getElementById("emb_peso")||{}).value;
   const peso=pv?parseFloat(pv):null;
   if(!numero) return toast("Informe o número do animal.","err");
+  const antes=statusVeiculos(lote);
+  if((lote.veiculos&&lote.veiculos.length) && antes.cheios)
+    return toast(`Todos os veículos já estão completos (${antes.meta}). Feche o embarque ou adicione um veículo.`,"err");
   const animal=LOCAL.animais.find(a=>!a.arquivado&&a.numero===numero);
   if(!animal) return toast(`Nenhum animal ativo com o número ${numero}.`,"err");
   if((lote.animais||[]).some(a=>a.animal_id===animal.id)) return toast(`Animal nº ${numero} já está no embarque.`,"err");
@@ -1479,7 +1578,14 @@ async function embarcarAnimal(){
   const { error } = await sb.from("lotes").update({ animais:nova }).eq("id",embarqueId);
   if(error) return toast("Erro ao salvar: "+msgErro(error),"err");
   lote.animais=nova;
-  toast(`Animal nº ${numero} embarcado.`,"ok");
+  const dep=statusVeiculos(lote);
+  if(lote.veiculos&&lote.veiculos.length){
+    if(dep.cheios && !antes.cheios) toast(`✅ ${antes.vs[antes.atual].nome} ${antes.atual+1} completo! Todos os veículos cheios (${dep.E}/${dep.meta}).`,"ok");
+    else if(dep.atual!==antes.atual) toast(`✅ ${antes.vs[antes.atual].nome} ${antes.atual+1} completo! Próximo: ${dep.vs[dep.atual].nome} ${dep.atual+1}.`,"ok");
+    else toast(`nº ${numero} embarcado — faltam ${dep.faltamAtual} para ${dep.vs[dep.atual].nome} ${dep.atual+1}.`,"ok");
+  } else {
+    toast(`Animal nº ${numero} embarcado.`,"ok");
+  }
   telaEmbarque();
 }
 async function removerEmbarque(i){
@@ -1497,14 +1603,16 @@ async function fecharEmbarque(){
   const comPeso=emb.filter(a=>a.peso!=null);
   const pesoTotal=comPeso.reduce((s,a)=>s+a.peso,0);
   const pesoMedio=comPeso.length?Math.round(pesoTotal/comPeso.length*10)/10:null;
-  const upd={ status:"fechado", cabecas:emb.length, peso_total:Math.round(pesoTotal*10)/10, peso_medio:pesoMedio, fechado_em:new Date().toISOString() };
+  const agora=new Date().toISOString();
+  const upd={ status:"fechado", cabecas:emb.length, peso_total:Math.round(pesoTotal*10)/10, peso_medio:pesoMedio, fechado_em:agora,
+    gestao_status:"aguardando_financeiro", gestao_enviado_em:agora };
   const { error } = await sb.from("lotes").update(upd).eq("id",embarqueId);
   if(error) return toast("Erro ao fechar: "+msgErro(error),"err");
   Object.assign(lote,upd);
   let arqErros=0;
   for(const a of emb){ const r=await sb.rpc("arquivar_animal",{ p_id:a.animal_id, p_status:"abate" }); if(r&&r.error) arqErros++; }
   if(arqErros) toast(`${arqErros} animal(is) não puderam ser arquivados.`,"err");
-  else toast("Embarque fechado. Animais saíram do rebanho.","ok");
+  else toast("Embarque fechado e enviado ao app de gestão.","ok");
   const id=embarqueId; embarqueId=null;
   relatorioEmbarque(id);
 }
@@ -1516,6 +1624,8 @@ function textoRelatorioEmbarque(lote){
   if(lote.peso_medio!=null) t+=`Peso médio: ${lote.peso_medio} kg\n`;
   if(lote.peso_total!=null) t+=`Peso total: ${lote.peso_total} kg\n`;
   if(lote.peso_medio_carcaca!=null){ t+=`Peso médio de carcaça: ${lote.peso_medio_carcaca} kg\n`; t+=`Rendimento de carcaça: ${lote.rendimento_pct}%\n`; }
+  const rv=resumoVeiculos(lote);
+  if(rv.length){ t+=`\nPor veículo:\n`+rv.map(v=>`• ${v.nome}: ${v.n}/${v.cap} cab${v.media!=null?` · média ${v.media} kg`:''}`).join("\n")+"\n"; }
   t+=`\nAnimais:\n`+linhas.join("\n");
   t+=`\n\n— Fazenda Realeza`;
   return t;
@@ -1536,14 +1646,16 @@ function relatorioEmbarque(id){
         <div class="kpi gold"><div class="n">${lote.peso_medio_carcaca}</div><div class="l">Carcaça média (kg)</div></div>
         <div class="kpi gold"><div class="n">${lote.rendimento_pct}%</div><div class="l">Rendimento</div></div>
       </div>`:""}
-      <div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Nº</th><th>Peso (kg)</th></tr></thead>
-      <tbody>${(lote.animais||[]).map(a=>`<tr><td data-label="Nº"><b>${a.numero}</b></td><td data-label="Peso">${a.peso!=null?a.peso:"—"}</td></tr>`).join("")}</tbody></table></div>
+      ${(function(){const rv=resumoVeiculos(lote);return rv.length?`<div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Veículo</th><th>Cabeças</th><th>Peso médio</th></tr></thead><tbody>${rv.map(v=>`<tr><td data-label="Veículo"><b>${esc(v.nome)}</b></td><td data-label="Cabeças">${v.n}/${v.cap}</td><td data-label="Peso médio">${v.media!=null?v.media+" kg":"—"}</td></tr>`).join("")}</tbody></table></div>`:'';})()}
+      <div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Nº</th><th>Peso (kg)</th><th>Veículo</th></tr></thead>
+      <tbody>${(lote.animais||[]).map((a,i)=>{const k=veiculoDaPosicao(lote.veiculos,i);const vn=(lote.veiculos&&lote.veiculos[k])?`${lote.veiculos[k].nome} ${k+1}`:"—";return `<tr><td data-label="Nº"><b>${a.numero}</b></td><td data-label="Peso">${a.peso!=null?a.peso:"—"}</td><td data-label="Veículo">${esc(vn)}</td></tr>`;}).join("")}</tbody></table></div>
     </div>
     <div class="actions no-print" style="flex-wrap:wrap;gap:8px">
       <button class="btn" style="width:auto" onclick='compartilharEmbarque("${id}")'>📲 Compartilhar (WhatsApp)</button>
       <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
       <button class="btn danger sm" style="width:auto" onclick='excluirLote("${id}")'>🗑️ Excluir lote</button>
     </div>
+    ${lote.gestao_status==="aguardando_financeiro"?`<div class="alerta-mini no-print" style="margin-top:12px">📤 Informativo enviado ao app de gestão — <b>aguardando os dados financeiros</b> para concluir a operação.</div>`:lote.gestao_status==="concluido"?`<div class="alerta-mini ok no-print" style="margin-top:12px">✅ Operação concluída no app de gestão${lote.gestao_valor_total!=null?` · R$ ${lote.gestao_valor_total}`:""}.</div>`:""}
     ${lote.status==="fechado"?`<div class="card no-print" style="margin-top:14px;background:#fff8e6;border-color:#e6cf8a">
       <h3>Rendimento de carcaça</h3>
       <p class="muted">Quando o frigorífico informar, lance o peso médio de carcaça pra calcular o rendimento. O lote fica em aberto até você lançar.</p>
