@@ -1332,6 +1332,11 @@ async function salvarManejo(animalId){
 let compraState=null;   // { n, feitos:[] }
 let embarqueId=null;    // id do lote de abate em montagem
 
+function dataNascDeMeses(meses){
+  if(meses==null || isNaN(meses)) return null;
+  const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-Math.round(meses));
+  return d.toISOString().slice(0,10);
+}
 // ---------- COMPRA ----------
 function iniciarCompra(){
   app.innerHTML=`<div class="card">
@@ -1365,6 +1370,13 @@ async function telaCompraAnimal(){
       <div class="field"><label>Tipo</label><select id="cmp_tipo"><option value="macho">Macho</option><option value="femea">Fêmea</option></select></div>
     </div>
     <div class="field" style="margin-top:8px"><label>Peso (kg)</label><input id="cmp_peso" type="number" step="0.1" inputmode="decimal" placeholder="suba na balança ou digite" style="background:#fff59d;border-color:var(--ouro);border-width:2px;font-size:24px;font-weight:800;text-align:center"></div>
+    <div id="cmp_extra">
+      <div class="grid" style="margin-top:8px">
+        <div class="field"><label>Meses de vida</label><input id="cmp_meses" type="number" inputmode="numeric" min="0" placeholder="ex: 18"></div>
+        <div class="field"><label>Raça</label><select id="cmp_raca">${optRacas("")}</select></div>
+      </div>
+      <div class="field" style="margin-top:8px"><label>Classificação genética</label><select id="cmp_class">${optClass("")}</select></div>
+    </div>
     <div class="actions"><button class="btn" onclick="salvarCompraAnimal()">Salvar e próximo →</button></div>
     ${st.feitos.length?`<div class="divider"></div><p class="muted">Já cadastrados: ${st.feitos.map(f=>`nº ${f.numero}${f.peso!=null?" ("+f.peso+"kg)":""}`).join(" · ")}</p>`:""}
   </div>`;
@@ -1379,6 +1391,10 @@ async function salvarCompraAnimal(){
   if(LOCAL.animais.some(a=>!a.arquivado&&a.numero===numero)) return toast(`Número ${numero} já está em uso.`,"err");
   const hoje=new Date().toISOString().slice(0,10);
   const rec={ numero, tipo, origem:"compra", data_compra:hoje, arquivado:false, status:"ativo" };
+  const mEl=v("cmp_meses"); const meses=(mEl&&mEl.value)?parseInt(mEl.value):null;
+  if(meses!=null && !isNaN(meses)) rec.data_nascimento=dataNascDeMeses(meses);
+  const rEl=v("cmp_raca"); if(rEl&&rEl.value) rec.raca=rEl.value;
+  const cEl=v("cmp_class"); if(cEl&&cEl.value) rec.classificacao_genetica=cEl.value;
   const { data:novo, error } = await sb.from("animais").insert(rec);
   if(error) return toast("Erro ao cadastrar: "+msgErro(error),"err");
   const animalId=novo[0].id;
