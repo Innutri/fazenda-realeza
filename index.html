@@ -128,6 +128,21 @@
   @keyframes alertaPulse{0%,100%{background:#a81c1c}50%{background:#d62b2b}}
   @keyframes bolaPulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.85)}70%{box-shadow:0 0 0 13px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
 
+  .op-acoes{display:flex;gap:12px;flex-wrap:wrap}
+  .op-acoes button{flex:1;min-width:150px;border:none;border-radius:14px;padding:20px 14px;font-size:19px;font-weight:800;color:#fff;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;line-height:1.15}
+  .op-acoes .btn-compra{background:linear-gradient(135deg,#1f5c3d,#2e7d54)}
+  .op-acoes .btn-venda{background:linear-gradient(135deg,#8a5a12,#b5811f)}
+  .op-acoes button:active{transform:translateY(1px)}
+  .op-acoes button small{font-size:11.5px;font-weight:600;opacity:.92}
+  .wizard-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .wizard-head h3{border:none}
+  .wizard-head .voltar{background:#fff;border:1px solid var(--linha);border-radius:8px;padding:7px 11px;font-weight:700;cursor:pointer;color:var(--verde)}
+  .prog{height:10px;background:#eef2ee;border-radius:6px;overflow:hidden;margin:10px 0}
+  .prog > i{display:block;height:100%;background:var(--verde2);transition:width .3s}
+  .emb-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--linha);border-radius:8px;margin-top:6px;font-size:14px}
+  .emb-item button{background:#fdeaea;color:var(--erro);border:1px solid #f2c9c9;border-radius:6px;padding:5px 9px;font-weight:700;cursor:pointer}
+  @media print{ body *{visibility:hidden} #print-area,#print-area *{visibility:visible} #print-area{position:absolute;left:0;top:0;width:100%;padding:10px} .no-print{display:none !important} }
+
   .empty{text-align:center;color:var(--txt2);padding:30px;font-size:13px}
   .placeholder{text-align:center;padding:50px 20px;color:var(--txt2)}
   .placeholder .ic{font-size:48px;opacity:.4}
@@ -628,7 +643,7 @@ Balanca.onStatus(s=>{
   if(t) t.textContent = s.conectado ? (s.ultimoPeso ? (s.ultimoPeso + " kg") : "conectada") : (s.modo==="procurando…"||s.modo==="conectando…" ? s.modo : "balança");
 });
 Balanca.onPeso(peso=>{
-  const p = document.getElementById("mo_peso");
+  const p = document.getElementById("mo_peso") || document.getElementById("cmp_peso") || document.getElementById("emb_peso");
   if(p){
     p.value = peso;
     try{ p.dispatchEvent(new Event("input",{bubbles:true})); }catch(e){}
@@ -1221,6 +1236,13 @@ async function renderNumeros(){
 // ============================================================
 function renderOperacional(){
   app.innerHTML = `
+    <div class="card" style="padding:14px">
+      <div class="op-acoes">
+        <button class="btn-compra" onclick="iniciarCompra()">🛒 Compra de animais<small>cadastrar + pesar</small></button>
+        <button class="btn-venda" onclick="iniciarVendaAbate()">🚚 Venda para abate<small>embarque + relatório</small></button>
+      </div>
+    </div>
+    <div id="lotes-abertos"></div>
     <div class="card" style="text-align:center;padding:26px 16px">
       <h3 style="font-size:19px;display:block;border:none">Buscar animal no curral</h3>
       <p class="muted">Digite o número do animal e toque em Buscar (ou "Ir" no teclado).</p>
@@ -1230,7 +1252,25 @@ function renderOperacional(){
       </form>
     </div>
     <div id="op-body" class="curral"></div>`;
+  renderLotesAbertos();
   const inp=document.getElementById("op_cod"); if(inp) inp.focus();
+}
+function renderLotesAbertos(){
+  const box=document.getElementById("lotes-abertos"); if(!box) return;
+  const abertos=(LOCAL.lotes||[]).filter(l=>l.tipo==="venda_abate" && (l.status==="aberto"||l.status==="fechado"));
+  if(!abertos.length){ box.innerHTML=""; return; }
+  abertos.sort((a,b)=> ((b.fechado_em||b.created_at||"") < (a.fechado_em||a.created_at||"") ? -1 : 1));
+  box.innerHTML=`<div class="card">
+    <h3>🚚 Lotes de abate em aberto</h3>
+    ${abertos.map(l=>{
+      const st=l.status==="aberto"?`<span class="tag proc">montando embarque</span>`:`<span class="tag vazia">aguardando carcaça</span>`;
+      const info=l.status==="aberto"?`${(l.animais||[]).length}/${l.meta_cabecas} embarcados`:`${l.cabecas} cab · média ${l.peso_medio!=null?l.peso_medio+"kg":"—"}`;
+      const acao=l.status==="aberto"
+        ? `<button class="btn sec" style="width:auto" onclick='retomarEmbarque("${l.id}")'>Continuar</button>`
+        : `<button class="btn sec" style="width:auto" onclick='relatorioEmbarque("${l.id}")'>Relatório / carcaça</button>`;
+      return `<div class="emb-item" style="flex-wrap:wrap"><span><b>${esc(l.frigorifico)}</b> ${st}<br><span class="muted">${info} · ${fmtDate(l.data_embarque)}</span></span>${acao}</div>`;
+    }).join("")}
+  </div>`;
 }
 let animalOp=null;
 async function buscarAnimalOp(){
@@ -1283,6 +1323,237 @@ async function salvarManejo(animalId){
   const { error } = await sb.from("operacoes_rebanho").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
   toast("Manejo registrado!","ok"); buscarAnimalOp();
+}
+
+// ============================================================
+// COMPRA DE ANIMAIS + VENDA PARA ABATE (embarque / lotes)
+// (parte financeira fica no app de gestão — aqui é só operacional)
+// ============================================================
+let compraState=null;   // { n, feitos:[] }
+let embarqueId=null;    // id do lote de abate em montagem
+
+// ---------- COMPRA ----------
+function iniciarCompra(){
+  app.innerHTML=`<div class="card">
+    <div class="wizard-head"><button class="voltar" onclick="render()">← Voltar</button><h3>🛒 Compra de animais</h3></div>
+    <p class="muted">Quantos animais foram comprados? Você vai cadastrar cada um já com o peso.</p>
+    <div class="field" style="margin-top:8px"><label>Quantidade de animais</label>
+      <input id="cmp_qtd" type="number" inputmode="numeric" min="1" placeholder="ex: 30" style="font-size:32px;font-weight:800;text-align:center;padding:12px">
+    </div>
+    <div class="actions"><button class="btn" onclick="comecarCompra()">Começar cadastro</button></div>
+  </div>`;
+  const i=document.getElementById("cmp_qtd"); if(i) i.focus();
+}
+function comecarCompra(){
+  const n=parseInt((document.getElementById("cmp_qtd")||{}).value);
+  if(!n||n<1) return toast("Informe a quantidade.","err");
+  compraState={ n, feitos:[] };
+  telaCompraAnimal();
+}
+async function telaCompraAnimal(){
+  const st=compraState; if(!st) return render();
+  const idx=st.feitos.length;
+  if(idx>=st.n) return telaCompraResumo();
+  let sug=1; try{ const r=await sb.rpc("proximo_numero_disponivel"); if(r&&r.data) sug=r.data; }catch(_){}
+  const usados=new Set(st.feitos.map(f=>f.numero));
+  while(usados.has(sug) || LOCAL.animais.some(a=>!a.arquivado&&a.numero===sug)) sug++;
+  app.innerHTML=`<div class="card">
+    <div class="wizard-head"><button class="voltar" onclick="if(confirm('Sair da compra? Os já cadastrados ficam salvos.')) render()">← Sair</button><h3>🛒 Compra — animal ${idx+1} de ${st.n}</h3></div>
+    <div class="prog"><i style="width:${Math.round(idx/st.n*100)}%"></i></div>
+    <div class="grid">
+      <div class="field"><label>Número</label><input id="cmp_num" type="number" inputmode="numeric" value="${sug}" style="font-size:26px;font-weight:800;text-align:center"></div>
+      <div class="field"><label>Tipo</label><select id="cmp_tipo"><option value="macho">Macho</option><option value="femea">Fêmea</option></select></div>
+    </div>
+    <div class="field" style="margin-top:8px"><label>Peso (kg)</label><input id="cmp_peso" type="number" step="0.1" inputmode="decimal" placeholder="suba na balança ou digite" style="background:#fff59d;border-color:var(--ouro);border-width:2px;font-size:24px;font-weight:800;text-align:center"></div>
+    <div class="actions"><button class="btn" onclick="salvarCompraAnimal()">Salvar e próximo →</button></div>
+    ${st.feitos.length?`<div class="divider"></div><p class="muted">Já cadastrados: ${st.feitos.map(f=>`nº ${f.numero}${f.peso!=null?" ("+f.peso+"kg)":""}`).join(" · ")}</p>`:""}
+  </div>`;
+  const i=document.getElementById("cmp_num"); if(i){ i.focus(); i.select(); }
+}
+async function salvarCompraAnimal(){
+  const v=id=>document.getElementById(id);
+  const numero=parseInt(v("cmp_num").value);
+  const tipo=v("cmp_tipo").value;
+  const peso=v("cmp_peso").value?parseFloat(v("cmp_peso").value):null;
+  if(!numero||numero<1) return toast("Informe o número do animal.","err");
+  if(LOCAL.animais.some(a=>!a.arquivado&&a.numero===numero)) return toast(`Número ${numero} já está em uso.`,"err");
+  const hoje=new Date().toISOString().slice(0,10);
+  const rec={ numero, tipo, origem:"compra", data_compra:hoje, arquivado:false, status:"ativo" };
+  const { data:novo, error } = await sb.from("animais").insert(rec);
+  if(error) return toast("Erro ao cadastrar: "+msgErro(error),"err");
+  const animalId=novo[0].id;
+  if(peso!=null){
+    const { error:e2 } = await sb.from("operacoes_rebanho").insert({ animal_id:animalId, data:hoje, peso });
+    if(e2) toast("Animal salvo, mas o peso não gravou: "+msgErro(e2),"err");
+  }
+  compraState.feitos.push({ numero, tipo, peso, id:animalId });
+  toast(`Animal nº ${numero} cadastrado.`,"ok");
+  telaCompraAnimal();
+}
+function telaCompraResumo(){
+  const st=compraState; if(!st) return render();
+  const comPeso=st.feitos.filter(f=>f.peso!=null);
+  const media=comPeso.length?Math.round(comPeso.reduce((s,f)=>s+f.peso,0)/comPeso.length*10)/10:null;
+  app.innerHTML=`<div class="card">
+    <h3>✅ Compra registrada</h3>
+    <p class="muted">${st.feitos.length} ${st.feitos.length===1?"animal cadastrado":"animais cadastrados"} como <b>compra</b>.${media!=null?` Peso médio: <b>${media} kg</b>.`:""}</p>
+    <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Peso</th></tr></thead>
+    <tbody>${st.feitos.map(f=>`<tr><td data-label="Nº"><b>${f.numero}</b></td><td data-label="Tipo">${f.tipo}</td><td data-label="Peso">${f.peso!=null?f.peso+" kg":"—"}</td></tr>`).join("")}</tbody></table></div>
+    <div class="actions"><button class="btn" onclick="render()">Concluir</button></div>
+  </div>`;
+  compraState=null;
+}
+
+// ---------- VENDA PARA ABATE ----------
+function loteById(id){ return (LOCAL.lotes||[]).find(l=>l.id===id); }
+function iniciarVendaAbate(){
+  app.innerHTML=`<div class="card">
+    <div class="wizard-head"><button class="voltar" onclick="render()">← Voltar</button><h3>🚚 Venda para abate</h3></div>
+    <p class="muted">Quantos animais serão embarcados e para qual frigorífico?</p>
+    <div class="grid">
+      <div class="field"><label>Quantidade de animais</label><input id="va_qtd" type="number" inputmode="numeric" min="1" placeholder="ex: 40" style="font-size:26px;font-weight:800;text-align:center"></div>
+      <div class="field"><label>Frigorífico</label><input id="va_frig" placeholder="ex: JBS, Marfrig..."></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="comecarEmbarque()">Iniciar embarque</button></div>
+  </div>`;
+  const i=document.getElementById("va_qtd"); if(i) i.focus();
+}
+async function comecarEmbarque(){
+  const n=parseInt((document.getElementById("va_qtd")||{}).value);
+  const frig=((document.getElementById("va_frig")||{}).value||"").trim();
+  if(!n||n<1) return toast("Informe a quantidade de animais.","err");
+  if(!frig) return toast("Informe o frigorífico.","err");
+  const hoje=new Date().toISOString().slice(0,10);
+  const doc={ tipo:"venda_abate", status:"aberto", frigorifico:frig, meta_cabecas:n, data_embarque:hoje, animais:[] };
+  const { data:novo, error } = await sb.from("lotes").insert(doc);
+  if(error) return toast("Erro ao criar embarque: "+msgErro(error),"err");
+  embarqueId=novo[0].id;
+  telaEmbarque();
+}
+function retomarEmbarque(id){ embarqueId=id; telaEmbarque(); }
+function telaEmbarque(){
+  const lote=loteById(embarqueId); if(!lote) return render();
+  const emb=lote.animais||[]; const meta=lote.meta_cabecas||0;
+  const pct=meta?Math.round(emb.length/meta*100):0;
+  app.innerHTML=`<div class="card">
+    <div class="wizard-head"><button class="voltar" onclick="render()">← Sair</button><h3>🚚 Embarque — ${esc(lote.frigorifico)}</h3></div>
+    <p class="muted">Embarcados <b>${emb.length}</b> de ${meta} cabeças${lote.data_embarque?` · ${fmtDate(lote.data_embarque)}`:""}.</p>
+    <div class="prog"><i style="width:${Math.min(pct,100)}%"></i></div>
+    <div class="grid">
+      <div class="field"><label>Nº do animal</label><input id="emb_num" type="number" inputmode="numeric" enterkeyhint="done" style="font-size:26px;font-weight:800;text-align:center"></div>
+      <div class="field"><label>Peso (kg)</label><input id="emb_peso" type="number" step="0.1" inputmode="decimal" placeholder="balança/digite" style="background:#fff59d;border-color:var(--ouro);border-width:2px;font-size:22px;font-weight:800;text-align:center"></div>
+    </div>
+    <div class="actions"><button class="btn" onclick="embarcarAnimal()">➕ Embarcar animal</button></div>
+    <div class="divider"></div>
+    <div id="emb-lista">${emb.length? emb.map((a,i)=>`<div class="emb-item"><span><b>nº ${a.numero}</b> · ${a.peso!=null?a.peso+" kg":"s/ peso"}</span><button onclick="removerEmbarque(${i})">remover</button></div>`).join("") : `<p class="muted">Nenhum animal embarcado ainda.</p>`}</div>
+    <div class="actions" style="margin-top:14px"><button class="btn danger" onclick="fecharEmbarque()">🏁 Fechar embarque</button></div>
+  </div>`;
+  const i=document.getElementById("emb_num"); if(i) i.focus();
+}
+async function embarcarAnimal(){
+  const lote=loteById(embarqueId); if(!lote) return;
+  const numero=parseInt((document.getElementById("emb_num")||{}).value);
+  const pv=(document.getElementById("emb_peso")||{}).value;
+  const peso=pv?parseFloat(pv):null;
+  if(!numero) return toast("Informe o número do animal.","err");
+  const animal=LOCAL.animais.find(a=>!a.arquivado&&a.numero===numero);
+  if(!animal) return toast(`Nenhum animal ativo com o número ${numero}.`,"err");
+  if((lote.animais||[]).some(a=>a.animal_id===animal.id)) return toast(`Animal nº ${numero} já está no embarque.`,"err");
+  const nova=(lote.animais||[]).concat([{ animal_id:animal.id, numero, peso }]);
+  const { error } = await sb.from("lotes").update({ animais:nova }).eq("id",embarqueId);
+  if(error) return toast("Erro ao salvar: "+msgErro(error),"err");
+  lote.animais=nova;
+  toast(`Animal nº ${numero} embarcado.`,"ok");
+  telaEmbarque();
+}
+async function removerEmbarque(i){
+  const lote=loteById(embarqueId); if(!lote) return;
+  const arr=(lote.animais||[]).slice(); arr.splice(i,1);
+  const { error } = await sb.from("lotes").update({ animais:arr }).eq("id",embarqueId);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  lote.animais=arr; telaEmbarque();
+}
+async function fecharEmbarque(){
+  const lote=loteById(embarqueId); if(!lote) return;
+  const emb=lote.animais||[];
+  if(!emb.length) return toast("Embarque vazio — adicione ao menos um animal.","err");
+  if(emb.length<(lote.meta_cabecas||0) && !confirm(`Você embarcou ${emb.length} de ${lote.meta_cabecas}. Fechar mesmo assim?`)) return;
+  const comPeso=emb.filter(a=>a.peso!=null);
+  const pesoTotal=comPeso.reduce((s,a)=>s+a.peso,0);
+  const pesoMedio=comPeso.length?Math.round(pesoTotal/comPeso.length*10)/10:null;
+  const upd={ status:"fechado", cabecas:emb.length, peso_total:Math.round(pesoTotal*10)/10, peso_medio:pesoMedio, fechado_em:new Date().toISOString() };
+  const { error } = await sb.from("lotes").update(upd).eq("id",embarqueId);
+  if(error) return toast("Erro ao fechar: "+msgErro(error),"err");
+  Object.assign(lote,upd);
+  let arqErros=0;
+  for(const a of emb){ const r=await sb.rpc("arquivar_animal",{ p_id:a.animal_id, p_status:"abate" }); if(r&&r.error) arqErros++; }
+  if(arqErros) toast(`${arqErros} animal(is) não puderam ser arquivados.`,"err");
+  else toast("Embarque fechado. Animais saíram do rebanho.","ok");
+  const id=embarqueId; embarqueId=null;
+  relatorioEmbarque(id);
+}
+function textoRelatorioEmbarque(lote){
+  const linhas=(lote.animais||[]).map(a=>`nº ${a.numero}: ${a.peso!=null?a.peso+" kg":"s/ peso"}`);
+  let t=`*EMBARQUE — ${lote.frigorifico}*\n`;
+  t+=`Data: ${fmtDate(lote.data_embarque)}\n`;
+  t+=`Cabeças: ${lote.cabecas}\n`;
+  if(lote.peso_medio!=null) t+=`Peso médio: ${lote.peso_medio} kg\n`;
+  if(lote.peso_total!=null) t+=`Peso total: ${lote.peso_total} kg\n`;
+  if(lote.peso_medio_carcaca!=null){ t+=`Peso médio de carcaça: ${lote.peso_medio_carcaca} kg\n`; t+=`Rendimento de carcaça: ${lote.rendimento_pct}%\n`; }
+  t+=`\nAnimais:\n`+linhas.join("\n");
+  t+=`\n\n— Fazenda Realeza`;
+  return t;
+}
+function relatorioEmbarque(id){
+  const lote=loteById(id); if(!lote) return render();
+  app.innerHTML=`<div class="card">
+    <div class="wizard-head no-print"><button class="voltar" onclick="render()">← Operacional</button><h3>📄 Relatório do embarque</h3></div>
+    <div id="print-area">
+      <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Embarque</h2>
+      <p class="muted">Frigorífico <b>${esc(lote.frigorifico)}</b> · ${fmtDate(lote.data_embarque)}</p>
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi"><div class="n">${lote.cabecas??"—"}</div><div class="l">Cabeças</div></div>
+        <div class="kpi"><div class="n">${lote.peso_medio!=null?lote.peso_medio:"—"}</div><div class="l">Peso médio (kg)</div></div>
+        <div class="kpi"><div class="n">${lote.peso_total!=null?lote.peso_total:"—"}</div><div class="l">Peso total (kg)</div></div>
+      </div>
+      ${lote.peso_medio_carcaca!=null?`<div class="kpis" style="margin-top:8px">
+        <div class="kpi gold"><div class="n">${lote.peso_medio_carcaca}</div><div class="l">Carcaça média (kg)</div></div>
+        <div class="kpi gold"><div class="n">${lote.rendimento_pct}%</div><div class="l">Rendimento</div></div>
+      </div>`:""}
+      <div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Nº</th><th>Peso (kg)</th></tr></thead>
+      <tbody>${(lote.animais||[]).map(a=>`<tr><td data-label="Nº"><b>${a.numero}</b></td><td data-label="Peso">${a.peso!=null?a.peso:"—"}</td></tr>`).join("")}</tbody></table></div>
+    </div>
+    <div class="actions no-print" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" style="width:auto" onclick='compartilharEmbarque("${id}")'>📲 Compartilhar (WhatsApp)</button>
+      <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+    </div>
+    ${lote.status==="fechado"?`<div class="card no-print" style="margin-top:14px;background:#fff8e6;border-color:#e6cf8a">
+      <h3>Rendimento de carcaça</h3>
+      <p class="muted">Quando o frigorífico informar, lance o peso médio de carcaça pra calcular o rendimento. O lote fica em aberto até você lançar.</p>
+      <div class="field"><label>Peso médio de carcaça (kg)</label><input id="car_peso" type="number" step="0.1" inputmode="decimal" placeholder="ex: 300"></div>
+      <div class="actions"><button class="btn" onclick='lancarCarcaca("${id}")'>Calcular rendimento</button></div>
+    </div>`:lote.status==="finalizado"?`<p class="muted no-print" style="margin-top:12px">✅ Lote finalizado — rendimento de carcaça <b>${lote.rendimento_pct}%</b>.</p>`:""}
+  </div>`;
+}
+async function compartilharEmbarque(id){
+  const lote=loteById(id); if(!lote) return;
+  const txt=textoRelatorioEmbarque(lote);
+  try{ if(navigator.share){ await navigator.share({ text:txt }); return; } }catch(_){}
+  try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
+  try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
+}
+async function lancarCarcaca(id){
+  const lote=loteById(id); if(!lote) return;
+  const pc=parseFloat((document.getElementById("car_peso")||{}).value);
+  if(!pc||pc<=0) return toast("Informe o peso médio de carcaça.","err");
+  if(lote.peso_medio==null||lote.peso_medio<=0) return toast("Sem peso médio de embarque — não dá pra calcular o rendimento.","err");
+  const rend=Math.round(pc/lote.peso_medio*1000)/10;
+  const upd={ status:"finalizado", peso_medio_carcaca:Math.round(pc*10)/10, rendimento_pct:rend, carcaca_em:new Date().toISOString() };
+  const { error } = await sb.from("lotes").update(upd).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  Object.assign(lote,upd);
+  toast(`Rendimento de carcaça: ${rend}%`,"ok");
+  relatorioEmbarque(id);
 }
 function diffDias(d1,d2){ return Math.round((new Date(d2)-new Date(d1))/86400000); }
 function calcGMD(ops){
