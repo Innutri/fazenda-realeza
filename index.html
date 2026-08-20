@@ -119,6 +119,15 @@
   .toast.show{opacity:1;bottom:32px}
   .toast.err{background:var(--erro)} .toast.ok{background:var(--ok)}
 
+  .alerta-descarte{position:fixed;top:0;left:0;right:0;z-index:9999;background:#b21f1f;color:#fff;display:none;align-items:center;gap:12px;padding:16px 18px;box-shadow:0 6px 24px rgba(0,0,0,.35);font-weight:800;animation:alertaPulse 1s ease-in-out infinite}
+  .alerta-descarte.show{display:flex}
+  .alerta-descarte .bola{width:20px;height:20px;border-radius:50%;background:#fff;animation:bolaPulse 1s infinite;flex:0 0 auto}
+  .alerta-descarte .msg{flex:1;font-size:15px;line-height:1.3}
+  .alerta-descarte .msg small{display:block;font-weight:600;opacity:.92;font-size:12.5px;margin-top:2px}
+  .alerta-descarte button{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.7);color:#fff;border-radius:8px;padding:9px 13px;font-weight:800;cursor:pointer;flex:0 0 auto}
+  @keyframes alertaPulse{0%,100%{background:#a81c1c}50%{background:#d62b2b}}
+  @keyframes bolaPulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.85)}70%{box-shadow:0 0 0 13px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+
   .empty{text-align:center;color:var(--txt2);padding:30px;font-size:13px}
   .placeholder{text-align:center;padding:50px 20px;color:var(--txt2)}
   .placeholder .ic{font-size:48px;opacity:.4}
@@ -245,6 +254,7 @@
   <span class="db-hint" id="db-hint"></span>
 </div>
 <div class="toast" id="toast"></div>
+<div class="alerta-descarte" id="alerta-descarte"></div>
 <div class="modal-bg" id="modal-bg" onclick="fecharModalBg(event)"><div class="modal" id="modal"></div></div>
 
 <script>
@@ -486,6 +496,30 @@ const $ = (s,r=document)=>r.querySelector(s);
 const app = $("#app");
 let state = { tab:"operacional", sub:{} };
 
+// Regra de descarte / alerta: 3 ou mais diagnósticos de VAZIA dentro de uma janela de até 6 meses.
+function vaziasJanela6m(animalId){
+  const vz=(LOCAL.reproducao||[]).filter(r=>r.animal_id===animalId && r.resultado_prenhez===false)
+    .map(r=>r.data_diagnostico||r.data_cobertura||((r.created_at||"").slice(0,10)))
+    .filter(Boolean).sort();
+  for(let i=0;i<vz.length;i++){ let n=1, ate=vz[i];
+    for(let j=i+1;j<vz.length;j++){
+      const meses=(new Date(vz[j])-new Date(vz[i]))/(1000*60*60*24*30.44);
+      if(meses<=6){ n++; ate=vz[j]; } else break;
+    }
+    if(n>=3) return {alerta:true, n, de:vz[i], ate};
+  }
+  return {alerta:false, n:0};
+}
+function alertaDescarteVermelho(numero, n){
+  const el=$("#alerta-descarte"); if(!el) return;
+  el.innerHTML=`<span class="bola"></span><div class="msg">⚠️ ATENÇÃO — Fêmea nº ${numero}: ${n}ª vazia em menos de 6 meses.<small>Candidata a DESCARTE. Confira em Relatórios › Lista de descarte.</small></div><button type="button" onclick="var e=document.getElementById('alerta-descarte');e.classList.remove('show');e.innerHTML='';">Ciente</button>`;
+  el.classList.add("show");
+  try{ if(navigator.vibrate) navigator.vibrate([220,90,220]); }catch(_){}
+}
+function checarAlertaVazia(animalId){
+  const info=vaziasJanela6m(animalId);
+  if(info.alerta){ const a=(LOCAL.animais||[]).find(x=>x.id===animalId); alertaDescarteVermelho(a?(a.numero??"—"):"—", info.n); }
+}
 function toast(msg, type=""){
   const t=$("#toast"); t.textContent=msg; t.className="toast show "+type;
   clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2600);
@@ -1497,8 +1531,10 @@ async function salvarReproducao(animalId,ciclo){
   const { data:novo, error } = await sb.from("reproducao").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
   const repId=novo[0].id;
+  LOCAL.reproducao.push(Object.assign({}, rec, {id:repId}));
   if(sireNome) await sb.from("reproducao_touros").insert({reproducao_id:repId, touro_nome:sireNome});
   toast(aguard?"Cobertura registrada. Aguardando diagnóstico no próximo curral.": dg==="prenhe"?"Prenhez registrada!": "Registrada como vazia.", dg==="vazia"?"":"ok");
+  if(dg==="vazia") checarAlertaVazia(animalId);
   buscarAnimalOp();
 }
 function flowDiagnostico(a,c){
@@ -1526,7 +1562,10 @@ async function registrarDiagnostico(repId,prenhe){
   if(d&&d.value) rec.data_diagnostico=d.value;
   const { error } = await sb.from("reproducao").update(rec).eq("id",repId);
   if(error) return toast("Erro: "+error.message,"err");
+  const lr=(LOCAL.reproducao||[]).find(x=>x.id===repId); let animalId=null;
+  if(lr){ Object.assign(lr, rec); animalId=lr.animal_id; }
   toast(prenhe?"Prenhez confirmada!":"Registrada como vazia.", prenhe?"ok":"");
+  if(!prenhe && animalId) checarAlertaVazia(animalId);
   buscarAnimalOp();
 }
 async function descartarAnimal(animalId,numero){
@@ -1772,17 +1811,6 @@ function renderUltimosRegistros(){
     <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Quando</th><th>Tipo</th><th>Descrição</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
-function intervaloVazias6m(ciclos){
-  // datas em que a fêmea foi confirmada VAZIA
-  const vz=(ciclos||[]).filter(c=>c.resultado_prenhez===false)
-    .map(c=>c.data_diagnostico||c.data_cobertura||((c.created_at||"").slice(0,10)))
-    .filter(Boolean).sort();
-  for(let i=0;i<vz.length;i++) for(let j=i+1;j<vz.length;j++){
-    const meses=(new Date(vz[j])-new Date(vz[i]))/(1000*60*60*24*30.44);
-    if(meses<=6) return {ok:true, de:vz[i], ate:vz[j], meses:Math.round(meses*10)/10};
-  }
-  return {ok:false};
-}
 async function gerarRelatorio(){
   const body=$("#rel-body");
   const [ct, fx, rr, ci] = await Promise.all([
@@ -1810,14 +1838,6 @@ async function gerarRelatorio(){
   const pctPr=basePr?Math.round(rp.prenhes/basePr*100):0;
   const pctVz=basePr?100-pctPr:0;
   const pctProc = rp.total_femeas? Math.round(rp.em_processo/rp.total_femeas*100):0;
-
-  // Fêmeas com 2+ vazias num intervalo de até 6 meses (repeat breeders / descarte)
-  const repProblema = [];
-  LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea").forEach(f=>{
-    const ciclos = LOCAL.reproducao.filter(r=>r.animal_id===f.id);
-    const iv = intervaloVazias6m(ciclos);
-    if(iv.ok) repProblema.push({f, iv, nvazias: ciclos.filter(c=>c.resultado_prenhez===false).length});
-  });
 
   // Estatística reprodutiva sobre fêmeas aptas (12 meses ou mais)
   const femeasAtivas = LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea");
@@ -1876,11 +1896,10 @@ async function gerarRelatorio(){
   const cicloLbl=["1º ciclo","2º ciclo","3º ciclo ou +"];
   const totTercos=tercos[0]+tercos[1]+tercos[2]; const pt=(x)=> totTercos?Math.round(x/totTercos*100):0;
   const dISO=(ms)=> new Date(ms).toISOString().slice(0,10);
-  // 5) lista de descarte consolidada
+  // 5) lista de descarte consolidada — regra: 3 ou mais vazias em até 6 meses
   const descarte=[];
-  femeasAtivas.forEach(f=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id); const u=ultimoRepro(f.id);
-    const vazia=u && (u.fase==="vazia"||u.resultado_prenhez===false); const iv=intervaloVazias6m(cs);
-    if(vazia||iv.ok) descarte.push({f, motivo: iv.ok?"Vazia repetida (2+ em 6 meses)":"Vazia", cat:categoriaAnimal(f), idade:idadeTxt(f.data_nascimento), data: u?(u.data_diagnostico||u.data_cobertura):null}); });
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); const jv=vaziasJanela6m(f.id);
+    if(jv.alerta) descarte.push({f, motivo:`Vazia ${jv.n}× (≤6 meses)`, cat:categoriaAnimal(f), idade:idadeTxt(f.data_nascimento), data: u?(u.data_diagnostico||u.data_cobertura):null}); });
   descarte.sort((a,b)=>(a.f.numero||0)-(b.f.numero||0));
 
   // Previsão de partos
@@ -2096,7 +2115,7 @@ async function gerarRelatorio(){
 
     <div class="card" id="rel-descarte">
       <h3>Lista de descarte (candidatas)</h3>
-      <p class="muted">Fêmeas <b>vazias</b> e <b>repetidoras</b> (2+ vazias em até 6 meses) — candidatas a descarte. Total: ${descarte.length}.</p>
+      <p class="muted">Fêmeas com <b>3 ou mais diagnósticos de vazia em até 6 meses</b> — candidatas a descarte. Total: ${descarte.length}.</p>
       <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Idade</th><th>Motivo</th><th>Última info</th></tr></thead>
       <tbody>${descarte.length? descarte.map(d=>`<tr>
         <td data-label="Nº"><b>${d.f.numero??"—"}</b></td>
