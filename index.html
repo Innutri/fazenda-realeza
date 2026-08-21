@@ -263,6 +263,7 @@
   <button data-tab="rebanho">Rebanho</button>
   <button data-tab="cadastros">Cadastros</button>
   <button data-tab="relatorios">Relatórios</button>
+  <button data-tab="pasto">🌱 Pasto</button>
   <button data-tab="balanca">⚖️ Balança</button>
 </nav>
 
@@ -708,7 +709,94 @@ function render(){
   if(state.tab==="cadastros") return renderCadastros();
   if(state.tab==="operacional") return renderOperacional();
   if(state.tab==="relatorios") return renderRelatorios();
+  if(state.tab==="pasto") return renderPastagem();
   if(state.tab==="balanca") return renderBalanca();
+}
+// ============================================================
+// PASTAGEM — U.A. (Unidade Animal) e lotação  (1 U.A. = 450 kg PV)
+// ============================================================
+function calcPastagem(p){
+  const area=parseFloat(p.area_ha)||0;
+  const cab=parseInt(p.cabecas)||0;
+  const pm=parseFloat(p.peso_medio)||0;
+  const pesoTotal=cab*pm;
+  const ua=pesoTotal/450;
+  return { area, cab, pm, pesoTotal, ua, lotUA: area>0?ua/area:null, cabHa: area>0?cab/area:null };
+}
+function renderPastagem(){
+  const ps=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
+  const f1=v=>v==null?"—":(Math.round(v*10)/10).toString().replace(".",",");
+  const f2=v=>v==null?"—":(Math.round(v*100)/100).toString().replace(".",",");
+  let tCab=0,tUA=0,tArea=0;
+  const linhas=ps.map(p=>{
+    const c=calcPastagem(p); tCab+=c.cab; tUA+=c.ua; tArea+=c.area;
+    return `<tr>
+      <td data-label="Pasto"><b>${esc(p.nome)||"—"}</b></td>
+      <td data-label="Área (ha)">${(p.area_ha!=null&&p.area_ha!=="")?f1(c.area):"—"}</td>
+      <td data-label="Cabeças">${c.cab||"—"}</td>
+      <td data-label="Peso méd. (kg)">${c.pm?f1(c.pm):"—"}</td>
+      <td data-label="U.A.">${c.pesoTotal?f1(c.ua):"—"}</td>
+      <td data-label="Lotação (U.A./ha)"><b>${(c.lotUA!=null&&c.pesoTotal)?f2(c.lotUA):"—"}</b></td>
+      <td data-label="Cab/ha">${(c.cabHa!=null&&c.cab)?f2(c.cabHa):"—"}</td>
+      <td data-label="Produto">${esc(p.produto)||"—"}</td>
+    </tr>`;
+  }).join("");
+  const lotGeral = tArea>0? tUA/tArea : null;
+  const optPastos = ps.map(p=>`<option value="${p.id}">${esc(p.nome)||"(sem nome)"}</option>`).join("");
+  app.innerHTML=`
+    <div class="card">
+      <h3>🌱 Pastagem — U.A. e lotação</h3>
+      <p class="muted">Cadastre o pasto com a área em <b>Cadastros › Pastos</b>. Aqui você atualiza a ocupação (cabeças, peso médio, produto) e o app calcula a <b>Unidade Animal (U.A.)</b> e a <b>lotação</b>. Padrão: <b>1 U.A. = 450 kg</b> de peso vivo.</p>
+      ${ps.length?`
+      <div class="divider"></div>
+      <h4 style="font-size:13px;color:var(--verde2);margin-bottom:6px">Atualizar ocupação do pasto</h4>
+      <div class="grid">
+        <div class="field"><label>Pasto</label><select id="pg_sel" onchange="preencherLotacao()"><option value="">— escolha —</option>${optPastos}</select></div>
+        <div class="field"><label>Cabeças</label><input id="pg_cab" type="number" inputmode="numeric" min="0"></div>
+        <div class="field"><label>Peso médio (kg)</label><input id="pg_peso" type="number" step="0.1" inputmode="decimal"></div>
+        <div class="field"><label>Produto em uso</label><input id="pg_prod" placeholder="sal/ração/suplemento"></div>
+      </div>
+      <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
+      <div class="divider"></div>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th></tr></thead>
+      <tbody>${linhas}</tbody>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1">
+        <td data-label="Pasto">TOTAL / MÉDIA</td>
+        <td data-label="Área (ha)">${f1(tArea)}</td>
+        <td data-label="Cabeças">${tCab||"—"}</td>
+        <td data-label="Peso méd. (kg)">—</td>
+        <td data-label="U.A.">${f1(tUA)}</td>
+        <td data-label="Lotação (U.A./ha)">${(lotGeral!=null&&tUA)?f2(lotGeral):"—"}</td>
+        <td data-label="Cab/ha">${(tArea>0&&tCab)?f2(tCab/tArea):"—"}</td>
+        <td data-label="Produto">—</td>
+      </tr></tfoot></table></div>
+      <p class="muted" style="margin-top:10px;font-size:12.5px">U.A. do pasto = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
+      `:`<div class="empty">Nenhum pasto cadastrado ainda. Toque em "Cadastrar novo pasto".</div>`}
+      <div class="actions" style="margin-top:12px"><button class="btn sec" style="width:auto" onclick="irParaCadastroPasto()">➕ Cadastrar novo pasto</button></div>
+    </div>`;
+}
+function preencherLotacao(){
+  const id=(document.getElementById("pg_sel")||{}).value;
+  const p=(LOCAL.pastos||[]).find(x=>x.id===id);
+  const set=(el,v)=>{ const e=document.getElementById(el); if(e) e.value=(v==null?"":v); };
+  set("pg_cab", p?p.cabecas:""); set("pg_peso", p?p.peso_medio:""); set("pg_prod", p?p.produto:"");
+}
+async function salvarLotacaoPasto(){
+  const id=(document.getElementById("pg_sel")||{}).value;
+  if(!id) return toast("Escolha um pasto.","err");
+  const cabV=(document.getElementById("pg_cab")||{}).value;
+  const pesoV=(document.getElementById("pg_peso")||{}).value;
+  const prod=((document.getElementById("pg_prod")||{}).value||"").trim();
+  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null, produto: prod||null };
+  const { error } = await sb.from("pastos").update(upd).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast("Ocupação do pasto atualizada.","ok");
+  renderPastagem();
+}
+function irParaCadastroPasto(){
+  state.tab="cadastros"; state.sub=state.sub||{}; state.sub.outros="pastos";
+  document.querySelectorAll("#main-tabs button").forEach(x=>{ x.classList.toggle("active", x.dataset.tab==="cadastros"); });
+  render();
 }
 function placeholder(ic,t,d){
   app.innerHTML=`<div class="card placeholder"><div class="ic">${ic}</div><h2>${t}</h2><p class="muted">${d}</p></div>`;
@@ -749,10 +837,12 @@ function renderCadastro(){
 const OUTROS_CFG = {
   pastos: { titulo:"Pastos / Piquetes", singular:"Pasto", campos:[
     {id:"nome",label:"Nome do pasto/piquete",req:true},
-    {id:"area_ha",label:"Área (ha)",ctrl:"number"},
-    {id:"capacidade",label:"Capacidade (nº animais)",ctrl:"number"},
+    {id:"area_ha",label:"Área disponível (ha)",ctrl:"number"},
+    {id:"cabecas",label:"Cabeças no pasto",ctrl:"number"},
+    {id:"peso_medio",label:"Peso médio dos animais (kg)",ctrl:"number"},
+    {id:"produto",label:"Produto em uso (sal/ração/suplemento)"},
     {id:"forragem",label:"Forragem/Tipo"},
-  ], colunas:[["nome","Nome"],["area_ha","Área (ha)"],["capacidade","Capacidade"],["forragem","Forragem"]] },
+  ], colunas:[["nome","Nome"],["area_ha","Área (ha)"],["cabecas","Cabeças"],["peso_medio","Peso méd."],["produto","Produto"]] },
   lotes: { titulo:"Lotes / Grupos", singular:"Lote", campos:[
     {id:"nome",label:"Nome do lote",req:true},
     {id:"finalidade",label:"Finalidade",ctrl:"select",opcoes:[["cria","Cria"],["recria","Recria"],["engorda","Engorda"],["matrizes","Matrizes"],["reproducao","Reprodução"]]},
