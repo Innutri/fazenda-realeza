@@ -514,17 +514,51 @@ function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
 // ===================== FINANCEIRO — contas a pagar/receber =====================
-let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={};
+let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={};
 function titulosFiscais(){ return (L.titulos||[]); }
 function lancamentos(){ return (L.gestao_lancamentos||[]); }
 function avulsos(){ return lancamentos().filter(l=>l.origem==='avulso'); }
 function lancDeTitulo(id){ return lancamentos().find(l=>l.origem!=='avulso' && l.titulo_id===id); }
 async function recarregarLancamentos(){ L.gestao_lancamentos=await lerTabela('gestao_lancamentos'); }
+async function carregarNota(chave){
+  if(!chave) return null;
+  if(finNotaCache[chave]!==undefined) return finNotaCache[chave];
+  try{
+    const cols="chave,numero,serie,data_emissao,emitente_nome,emitente_doc,emitente_ie,emitente_endereco,emitente_uf,destinatario_nome,destinatario_doc,destinatario_uf,operacao,situacao,cfops,natureza,descricao,categoria,qtd_itens,valor,xml_storage_path,xml_completo";
+    const rows=await req(`/rest/v1/fiscal_notas?chave=eq.${encodeURIComponent(chave)}&select=${cols}&limit=1`, true);
+    finNotaCache[chave]=(rows&&rows[0])||null;
+  }catch(e){ finNotaCache[chave]=null; }
+  return finNotaCache[chave];
+}
+async function itensDaTabela(chave){
+  const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,descricao,quantidade,valor_total,cfop&order=item`);
+  return rows||[];
+}
+async function itensDoXML(path){
+  const token=await garantirToken();
+  const url=SB_URL+"/storage/v1/object/xmls-fiscais/"+encodeURI(path);
+  const txt=await new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();
+    x.open("GET",url,true); x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+token); x.timeout=20000;
+    x.onload=()=>{ if(x.status>=200&&x.status<300) resolve(x.responseText); else reject(new Error("HTTP "+x.status)); };
+    x.onerror=()=>reject(new Error("rede")); x.ontimeout=()=>reject(new Error("timeout")); x.send();
+  });
+  const docx=new DOMParser().parseFromString(txt,"application/xml");
+  const get=(el,tag)=>{ if(!el) return ""; const n=el.getElementsByTagName(tag); return n.length?(n[0].textContent||"").trim():""; };
+  return Array.from(docx.getElementsByTagName("det")).map((d,i)=>{
+    const prod=d.getElementsByTagName("prod")[0]; if(!prod) return null;
+    return { item:d.getAttribute("nItem")||String(i+1), descricao:get(prod,"xProd"), quantidade:get(prod,"qCom"), valor_total:parseFloat(get(prod,"vProd")||"0")||0, cfop:get(prod,"CFOP"), ncm:get(prod,"NCM") };
+  }).filter(Boolean);
+}
 async function carregarItens(chave){
   if(!chave) return [];
   if(finItensCache[chave]) return finItensCache[chave];
-  const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,descricao,quantidade,valor_total,cfop&order=item`);
-  finItensCache[chave]=rows||[]; return finItensCache[chave];
+  let items=await itensDaTabela(chave);
+  if(!items.length){
+    const n=await carregarNota(chave);
+    if(n && n.xml_storage_path && n.xml_completo){ try{ items=await itensDoXML(n.xml_storage_path); }catch(e){ items=[]; } }
+  }
+  finItensCache[chave]=items; return items;
 }
 function planoOptions(){
   const seen=new Set(); let out='';
@@ -611,8 +645,26 @@ function renderTituloDetalhe(c){
      </div>
      <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
    </div>
+   <div class="card"><h3>Dados da nota fiscal</h3><div id="fin-nota"><div class="muted">Carregando…</div></div></div>
    <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
   toggleRateio();
+  carregarNota(t.nota_chave).then(n=>{
+    const box=document.getElementById('fin-nota'); if(!box) return;
+    if(!n){ box.innerHTML='<div class="muted">Sem dados adicionais da nota.</div>'; return; }
+    const emit=`<b>${esc(n.emitente_nome||'—')}</b>`+(n.emitente_doc?(' · CNPJ '+esc(n.emitente_doc)):'')+(n.emitente_ie?(' · IE '+esc(n.emitente_ie)):'')+(n.emitente_uf?(' · '+esc(n.emitente_uf)):'');
+    const dest=esc(n.destinatario_nome||'—')+(n.destinatario_doc?(' · '+esc(n.destinatario_doc)):'')+(n.destinatario_uf?(' · '+esc(n.destinatario_uf)):'');
+    box.innerHTML=`<table><tbody>
+      <tr><td>Emitente</td><td>${emit}</td></tr>
+      <tr><td>Destinatário</td><td>${dest}</td></tr>
+      <tr><td>Natureza da operação</td><td>${esc(n.natureza||'—')}</td></tr>
+      <tr><td>CFOP</td><td>${esc(n.cfops||'—')}</td></tr>
+      <tr><td>Operação</td><td>${esc(n.operacao||'—')}${n.situacao?(' · '+esc(n.situacao)):''}</td></tr>
+      <tr><td>Produtos (resumo)</td><td>${esc(n.descricao||'—')}</td></tr>
+      <tr><td>Qtd. de itens</td><td>${n.qtd_itens!=null?n.qtd_itens:'—'}</td></tr>
+      <tr><td>Nº / série</td><td>${esc(n.numero||'—')}${n.serie?(' / '+esc(n.serie)):''}</td></tr>
+      <tr><td>Chave de acesso</td><td style="word-break:break-all;font-size:12px">${esc(n.chave||'—')}</td></tr>
+    </tbody></table>`;
+  }).catch(()=>{ const box=document.getElementById('fin-nota'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar a nota.</div>'; });
   carregarItens(t.nota_chave).then(items=>{
     const box=document.getElementById('fin-itens');
     if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Valor</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.descricao||'')}</td><td class="num">${it.quantidade||''}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nota sem itens detalhados.</div>';
