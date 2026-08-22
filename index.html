@@ -771,8 +771,7 @@ function renderPastagem(){
         <td data-label="Produto">—</td>
       </tr></tfoot></table></div>
       <p class="muted" style="margin-top:10px;font-size:12.5px">U.A. do pasto = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
-      `:`<div class="empty">Nenhum pasto cadastrado ainda. Toque em "Cadastrar novo pasto".</div>`}
-      <div class="actions" style="margin-top:12px"><button class="btn sec" style="width:auto" onclick="irParaCadastroPasto()">➕ Cadastrar novo pasto</button></div>
+      `:`<div class="empty">Nenhum pasto cadastrado ainda. Os pastos são cadastrados no <b>app de gestão</b> (Gerencial › Pastagem). Aqui no campo você atualiza a ocupação.</div>`}
     </div>`;
 }
 function preencherLotacao(){
@@ -874,16 +873,15 @@ const OUTROS_CFG = {
 };
 // --------- CADASTROS (aba principal) ---------
 function renderCadastros(){
-  const os = state.sub.outros || "pastos";
+  const os = state.sub.outros || "lotes";
   app.innerHTML = subnav([
-    {id:"pastos",label:"Pastos / Piquetes"},
     {id:"lotes",label:"Lotes"},
     {id:"medicamentos",label:"Medic./Vacinas"},
     {id:"protocolos",label:"Protocolos"},
     {id:"racas",label:"Raças"},
     {id:"classificacoes",label:"Class. genética"},
     {id:"equipes",label:"Equipes de touro"},
-  ],"outros","pastos") + `<div id="outros-body"></div>`;
+  ],"outros","lotes") + `<div id="outros-body"></div>`;
   bindSub();
   formOutro(os);
 }

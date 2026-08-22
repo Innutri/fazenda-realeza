@@ -157,7 +157,7 @@
 const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
 const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
 const APP_SLUG="fazenda-realeza";
-const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes"];
+const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes","pastos"];
 const L={};
 
 // ---------- Sessão / login (Supabase Auth via REST) ----------
@@ -295,6 +295,7 @@ function intervaloVazias6m(ciclos){
 // ---- seções ----
 const SECOES=[
   {id:"rebanho",       ic:"📊", nome:"Rebanho",       grupo:"Operação",   vivo:true },
+  {id:"pastagem",      ic:"🌱", nome:"Pastagem",      grupo:"Operação",   vivo:true },
   {id:"financeiro",    ic:"💰", nome:"Financeiro",    grupo:"Gestão",     vivo:true },
   {id:"vendas",        ic:"💵", nome:"Vendas",        grupo:"Gestão",     vivo:true },
   {id:"compras",       ic:"🛒", nome:"Compras",       grupo:"Gestão",     vivo:false},
@@ -346,7 +347,7 @@ function render(){
   document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("active",n.dataset.sec===id));
   const c=document.getElementById("conteudo");
   const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig,
-    financeiro:renderFinanceiro, vendas:renderVendas, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
+    financeiro:renderFinanceiro, vendas:renderVendas, pastagem:renderPastagem, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
   (map[id]||renderRebanho)(c);
   window.scrollTo(0,0);
 }
@@ -615,6 +616,79 @@ async function concluirVenda(id){
     Object.assign(lote, novoDoc);
     render();
   }catch(e){ alert("Erro ao concluir: "+(e.message||e)); }
+}
+
+// ===================== PASTAGEM =====================
+function calcPastagemG(p){ const area=parseFloat(p.area_ha)||0,cab=parseInt(p.cabecas)||0,pm=parseFloat(p.peso_medio)||0,pt=cab*pm,ua=pt/450; return {area,cab,pm,pt,ua,lot:area>0?ua/area:null,cabHa:area>0?cab/area:null}; }
+async function recarregarPastos(){ L.pastos=await lerTabela("pastos"); }
+function renderPastagem(c){
+  const ps=(L.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
+  const f1=v=>v==null?"—":(Math.round(v*10)/10).toString().replace(".",",");
+  const f2=v=>v==null?"—":(Math.round(v*100)/100).toString().replace(".",",");
+  let tC=0,tUA=0,tA=0;
+  const rows=ps.map(p=>{const k=calcPastagemG(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;return `<tr>
+    <td><b>${esc(p.nome)||"—"}</b></td><td>${(p.area_ha!=null&&p.area_ha!=="")?f1(k.area):"—"}</td><td>${k.cab||"—"}</td><td>${k.pm?f1(k.pm):"—"}</td><td><b>${k.pt?f1(k.ua):"—"}</b></td><td><b>${(k.lot!=null&&k.pt)?f2(k.lot):"—"}</b></td><td>${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td><td>${esc(p.produto)||"—"}</td>
+    <td><button class="btn ghost" style="padding:4px 8px" onclick='excluirPasto("${p.id}")'>Excluir</button></td></tr>`;}).join("");
+  const lotG=tA>0?tUA/tA:null;
+  const opt=ps.map(p=>`<option value="${p.id}">${esc(p.nome)||"(sem nome)"}</option>`).join("");
+  c.innerHTML=`
+  <div class="pgtitle">🌱 Pastagem</div>
+  <div class="pgsub">Cadastro dos pastos e cálculo de U.A. e lotação. Padrão: 1 U.A. = 450 kg de peso vivo. A ocupação também é atualizada no app de campo.</div>
+  <div class="card"><h3>Cadastrar pasto</h3>
+    <div class="grid">
+      <div class="field"><label>Nome do pasto/piquete</label><input id="pc_nome" placeholder="ex.: Sede, Baixão..."></div>
+      <div class="field"><label>Área disponível (ha)</label><input id="pc_area" type="number" step="0.1" placeholder="ex.: 50"></div>
+      <div class="field"><label>Forragem / Tipo</label><input id="pc_forr" placeholder="ex.: Brachiaria"></div>
+    </div>
+    <button class="btn" onclick="cadastrarPasto()">Cadastrar pasto</button>
+  </div>
+  ${ps.length?`
+  <div class="card"><h3>Atualizar ocupação</h3>
+    <div class="grid">
+      <div class="field"><label>Pasto</label><select id="po_sel" onchange="preencherOcup()"><option value="">— escolha —</option>${opt}</select></div>
+      <div class="field"><label>Cabeças</label><input id="po_cab" type="number" min="0"></div>
+      <div class="field"><label>Peso médio (kg)</label><input id="po_peso" type="number" step="0.1"></div>
+      <div class="field"><label>Produto em uso</label><input id="po_prod" placeholder="sal/ração/suplemento"></div>
+    </div>
+    <button class="btn" onclick="salvarOcupacao()">Salvar ocupação</button>
+  </div>
+  <div class="card"><h3>Planilha de pastagem</h3>
+    <table><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr style="font-weight:800"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td></td></tr></tfoot>
+    </table>
+    <p class="muted" style="margin-top:8px;font-size:12.5px">U.A. = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
+  </div>`:`<div class="card"><div class="muted">Nenhum pasto cadastrado ainda. Cadastre o primeiro acima.</div></div>`}`;
+}
+async function cadastrarPasto(){
+  const nome=(document.getElementById("pc_nome").value||"").trim();
+  const area=document.getElementById("pc_area").value;
+  const forr=(document.getElementById("pc_forr").value||"").trim();
+  if(!nome){ alert("Informe o nome do pasto."); return; }
+  const doc={ nome, area_ha: area!==""?parseFloat(area):null, forragem: forr||null };
+  try{ await reqWrite("POST","/rest/v1/pastos",{doc}); await recarregarPastos(); render(); }
+  catch(e){ alert("Erro ao cadastrar: "+(e.message||e)); }
+}
+function preencherOcup(){
+  const id=document.getElementById("po_sel").value;
+  const p=(L.pastos||[]).find(x=>x.id===id);
+  const set=(el,v)=>{const e=document.getElementById(el);if(e)e.value=(v==null?"":v);};
+  set("po_cab",p?p.cabecas:"");set("po_peso",p?p.peso_medio:"");set("po_prod",p?p.produto:"");
+}
+async function salvarOcupacao(){
+  const id=document.getElementById("po_sel").value;
+  if(!id){ alert("Escolha um pasto."); return; }
+  const p=(L.pastos||[]).find(x=>x.id===id); if(!p) return;
+  const cabV=document.getElementById("po_cab").value, pesoV=document.getElementById("po_peso").value, prod=(document.getElementById("po_prod").value||"").trim();
+  const novo=Object.assign({},p); delete novo.id;
+  novo.cabecas=cabV!==""?parseInt(cabV):null; novo.peso_medio=pesoV!==""?parseFloat(pesoV):null; novo.produto=prod||null;
+  try{ await reqWrite("PATCH","/rest/v1/pastos?id=eq."+id,{doc:novo}); await recarregarPastos(); render(); }
+  catch(e){ alert("Erro: "+(e.message||e)); }
+}
+async function excluirPasto(id){
+  if(!confirm("Excluir este pasto?")) return;
+  try{ await reqWrite("DELETE","/rest/v1/pastos?id=eq."+id); await recarregarPastos(); render(); }
+  catch(e){ alert("Erro ao excluir: "+(e.message||e)); }
 }
 
 function pCompras(c){
