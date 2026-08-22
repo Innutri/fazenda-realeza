@@ -2284,10 +2284,63 @@ function renderRelatorios(){
   app.innerHTML = subnav([
     {id:"geral",label:"Relatório geral de animais"},
     {id:"ultimos",label:"Últimos registros"},
+    {id:"pastagem",label:"Relatório de pastagem"},
   ],"relatorios","geral")
     + `<div id="rel-body"><div class="card"><div class="empty">Carregando…</div></div></div>`;
   bindSub();
-  if(sub==="ultimos") renderUltimosRegistros(); else gerarRelatorio();
+  if(sub==="ultimos") renderUltimosRegistros(); else if(sub==="pastagem") renderRelatorioPastagem(); else gerarRelatorio();
+}
+function textoRelatorioPastagem(){
+  const ps=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
+  let tC=0,tUA=0,tA=0;
+  let t=`*RELATÓRIO DE PASTAGEM*\n${fmtDate(new Date().toISOString().slice(0,10))}\n\n`;
+  ps.forEach(p=>{const k=calcPastagem(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;
+    t+=`• ${p.nome||"—"} — ${k.area?k.area+" ha":"s/ área"} · ${k.cab||0} cab · ${k.pm||0} kg\n   U.A. ${k.pt?Math.round(k.ua*10)/10:"—"} · lotação ${(k.lot!=null&&k.pt)?Math.round(k.lot*100)/100:"—"} U.A./ha${p.forragem?` · ${p.forragem}`:""}${p.produto?` · ${p.produto}`:""}\n`;});
+  const lotG=tA>0?tUA/tA:null;
+  t+=`\nTOTAL: ${tA?Math.round(tA*10)/10:0} ha · ${tC} cab · U.A. ${Math.round(tUA*10)/10} · lotação geral ${lotG!=null?Math.round(lotG*100)/100:"—"} U.A./ha`;
+  t+=`\n\n— Fazenda Realeza`;
+  return t;
+}
+async function compartilharPastagem(){
+  const txt=textoRelatorioPastagem();
+  try{ if(navigator.share){ await navigator.share({ text:txt }); return; } }catch(_){}
+  try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
+  try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
+}
+function renderRelatorioPastagem(){
+  const body=$("#rel-body");
+  const ps=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
+  const f1=v=>v==null?"—":(Math.round(v*10)/10).toString().replace(".",",");
+  const f2=v=>v==null?"—":(Math.round(v*100)/100).toString().replace(".",",");
+  let tC=0,tUA=0,tA=0;
+  const rows=ps.map(p=>{const k=calcPastagem(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;
+    return `<tr>
+      <td data-label="Pasto"><b>${esc(p.nome)||"—"}</b></td>
+      <td data-label="Área (ha)">${(p.area_ha!=null&&p.area_ha!=="")?f1(k.area):"—"}</td>
+      <td data-label="Forragem">${esc(p.forragem)||"—"}</td>
+      <td data-label="Cabeças">${k.cab||"—"}</td>
+      <td data-label="Peso méd. (kg)">${k.pm?f1(k.pm):"—"}</td>
+      <td data-label="Produto">${esc(p.produto)||"—"}</td>
+      <td data-label="U.A.">${k.pt?f1(k.ua):"—"}</td>
+      <td data-label="Lotação (U.A./ha)"><b>${(k.lot!=null&&k.pt)?f2(k.lot):"—"}</b></td>
+      <td data-label="Cab/ha">${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td>
+    </tr>`;}).join("");
+  const lotG=tA>0?tUA/tA:null;
+  body.innerHTML=`<div class="card">
+    <div class="wizard-head no-print"><h3 style="border:none">🌱 Relatório de pastagem</h3></div>
+    <div id="print-area">
+      <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
+      <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
+      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Forragem</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>Produto</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>—</td><td>${tC||"—"}</td><td>—</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td></tr></tfoot>
+      </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
+    </div>
+    ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" style="width:auto" onclick="compartilharPastagem()">📲 Compartilhar (WhatsApp)</button>
+      <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+    </div>`:""}
+  </div>`;
 }
 function fmtDateTime(iso){ if(!iso) return "—"; if(/^\d{4}-\d{2}-\d{2}$/.test(iso)) return fmtDate(iso); const d=new Date(iso); if(isNaN(d.getTime())) return "—"; const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function ordemDe(r){ const n=parseInt(String(r.id||"").replace(/\D/g,"")); return isNaN(n)?0:n; }

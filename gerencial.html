@@ -459,6 +459,21 @@ function renderRelatorios(c){
     <tbody>${linha("femea")}${linha("macho")}${linha("touro")}</tbody></table>
   </div>
   <div class="card">
+    <h3>🌱 Relatório de pastagem</h3>
+    <div class="sub">Cadastro do pasto + ocupação, com U.A. e lotação. 1 U.A. = 450 kg de peso vivo.</div>
+    ${(function(){
+      const ps=(L.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
+      if(!ps.length) return '<div class="empty">Nenhum pasto cadastrado. Cadastre na aba Pastagem.</div>';
+      const f1=v=>v==null?"—":(Math.round(v*10)/10).toString().replace(".",",");
+      const f2=v=>v==null?"—":(Math.round(v*100)/100).toString().replace(".",",");
+      let tC=0,tUA=0,tA=0;
+      const rows=ps.map(p=>{const k=calcPastagemG(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;
+        return `<tr><td><b>${esc(p.nome)||"—"}</b></td><td class="num">${(p.area_ha!=null&&p.area_ha!=="")?f1(k.area):"—"}</td><td>${esc(p.forragem)||"—"}</td><td class="num">${k.cab||"—"}</td><td class="num">${k.pm?f1(k.pm):"—"}</td><td>${esc(p.produto)||"—"}</td><td class="num"><b>${k.pt?f1(k.ua):"—"}</b></td><td class="num"><b>${(k.lot!=null&&k.pt)?f2(k.lot):"—"}</b></td><td class="num">${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td></tr>`;}).join("");
+      const lotG=tA>0?tUA/tA:null;
+      return `<div style="overflow-x:auto"><table><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Forragem</th><th>Cabeças</th><th>Peso méd.</th><th>Produto</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th></tr></thead><tbody>${rows}</tbody><tfoot><tr style="font-weight:800"><td>TOTAL / MÉDIA</td><td class="num">${f1(tA)}</td><td>—</td><td class="num">${tC||"—"}</td><td>—</td><td>—</td><td class="num">${f1(tUA)}</td><td class="num">${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td class="num">${(tA>0&&tC)?f2(tC/tA):"—"}</td></tr></tfoot></table></div>`;
+    })()}
+  </div>
+  <div class="card">
     <h3>Mais relatórios</h3>
     <p class="muted">Os relatórios reprodutivos completos (prenhez por método, por ciclo, concepção por touro) estão na aba <b>Relatórios</b> do app de campo. Posso trazer os que você mais usa pra cá, em formato de mesa grande — é só pedir.</p>
   </div>`;
