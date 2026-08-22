@@ -2295,7 +2295,7 @@ function textoRelatorioPastagem(){
   let tC=0,tUA=0,tA=0;
   let t=`*RELATÓRIO DE PASTAGEM*\n${fmtDate(new Date().toISOString().slice(0,10))}\n\n`;
   ps.forEach(p=>{const k=calcPastagem(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;
-    t+=`• ${p.nome||"—"} — ${k.area?k.area+" ha":"s/ área"} · ${k.cab||0} cab · ${k.pm||0} kg\n   U.A. ${k.pt?Math.round(k.ua*10)/10:"—"} · lotação ${(k.lot!=null&&k.pt)?Math.round(k.lot*100)/100:"—"} U.A./ha${p.forragem?` · ${p.forragem}`:""}${p.produto?` · ${p.produto}`:""}\n`;});
+    t+=`• ${p.nome||"—"} — ${k.area?k.area+" ha":"s/ área"} · ${k.cab||0} cab · ${k.pm||0} kg\n   U.A. ${k.pesoTotal?Math.round(k.ua*10)/10:"—"} · lotação ${(k.lotUA!=null&&k.pesoTotal)?Math.round(k.lotUA*100)/100:"—"} U.A./ha${p.produto?` · ${p.produto}`:""}\n`;});
   const lotG=tA>0?tUA/tA:null;
   t+=`\nTOTAL: ${tA?Math.round(tA*10)/10:0} ha · ${tC} cab · U.A. ${Math.round(tUA*10)/10} · lotação geral ${lotG!=null?Math.round(lotG*100)/100:"—"} U.A./ha`;
   t+=`\n\n— Fazenda Realeza`;
@@ -2317,13 +2317,12 @@ function renderRelatorioPastagem(){
     return `<tr>
       <td data-label="Pasto"><b>${esc(p.nome)||"—"}</b></td>
       <td data-label="Área (ha)">${(p.area_ha!=null&&p.area_ha!=="")?f1(k.area):"—"}</td>
-      <td data-label="Forragem">${esc(p.forragem)||"—"}</td>
       <td data-label="Cabeças">${k.cab||"—"}</td>
-      <td data-label="Peso méd. (kg)">${k.pm?f1(k.pm):"—"}</td>
-      <td data-label="Produto">${esc(p.produto)||"—"}</td>
-      <td data-label="U.A.">${k.pt?f1(k.ua):"—"}</td>
-      <td data-label="Lotação (U.A./ha)"><b>${(k.lot!=null&&k.pt)?f2(k.lot):"—"}</b></td>
+      <td data-label="Peso méd.">${k.pm?f1(k.pm):"—"}</td>
+      <td data-label="U.A."><b>${k.pesoTotal?f1(k.ua):"—"}</b></td>
+      <td data-label="Lotação (U.A./ha)"><b>${(k.lotUA!=null&&k.pesoTotal)?f2(k.lotUA):"—"}</b></td>
       <td data-label="Cab/ha">${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td>
+      <td data-label="Produto">${esc(p.produto)||"—"}</td>
     </tr>`;}).join("");
   const lotG=tA>0?tUA/tA:null;
   body.innerHTML=`<div class="card">
@@ -2331,9 +2330,9 @@ function renderRelatorioPastagem(){
     <div id="print-area">
       <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
       <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
-      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Forragem</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>Produto</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th></tr></thead>
+      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>—</td><td>${tC||"—"}</td><td>—</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td></tr></tfoot>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td></tr></tfoot>
       </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
     </div>
     ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
