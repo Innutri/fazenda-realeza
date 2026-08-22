@@ -81,6 +81,11 @@
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--linha)}
   th{color:var(--txt2);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;background:#fafbf9}
   .tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11.5px;font-weight:700;background:#fdeaea;color:#b23b3b}
+  .finabas{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .finabas button{background:#fff;border:1px solid var(--linha);border-radius:20px;padding:8px 14px;font-weight:700;cursor:pointer;color:#20272e}
+  .finabas button.on{background:#2e7d54;border-color:#2e7d54;color:#fff}
+  .finhead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .num{text-align:right}
   .empty{color:var(--txt2);text-align:center;padding:18px;font-size:13.5px}
   .num{font-variant-numeric:tabular-nums}
   .exports{display:flex;gap:10px;flex-wrap:wrap}
@@ -157,7 +162,7 @@
 const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
 const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
 const APP_SLUG="fazenda-realeza";
-const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes","pastos"];
+const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes","pastos","gestao_lancamentos"];
 const L={};
 
 // ---------- Sessão / login (Supabase Auth via REST) ----------
@@ -232,8 +237,12 @@ async function lerTabela(t){
   return all.map(r=>Object.assign({},r.doc,{id:r.id}));
 }
 async function lerTitulos(){
-  const cols="app_slug,id,tipo_titulo,tipo_doc,numero,serie,data_emissao,vencimento,valor,contraparte_nome,contraparte_doc,cfop,natureza,descricao,status,pago,data_pagamento,valor_pago";
+  const cols="app_slug,id,nota_chave,tipo_titulo,tipo_doc,numero,serie,data_emissao,vencimento,valor,contraparte_nome,contraparte_doc,cfop,natureza,descricao,status,pago,data_pagamento,valor_pago";
   return await req(`/rest/v1/gestao_titulos_por_app?app_slug=eq.${APP_SLUG}&select=${cols}&order=data_emissao.desc&limit=5000`, true);
+}
+async function lerPlanos(){
+  try{ return await req(`/rest/v1/fiscal_plano_contas?select=codigo,reduzido,descricao,tipo&order=codigo&limit=3000`); }
+  catch(e){ return []; }
 }
 
 function mostrarLogin(msg){
@@ -314,6 +323,7 @@ async function carregar(){
   try{
     for(const t of TABELAS) L[t]=await lerTabela(t);
     L.titulos=await lerTitulos();
+    L.planos=await lerPlanos();
     est.style.display="none"; shell.style.display="flex";
     document.getElementById("topright").innerHTML=`
       <span class="userchip">👤 <b>${esc(SESSION.email)}</b></span>
@@ -503,45 +513,179 @@ function renderConfig(c){
 function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt} O layout abaixo é uma prévia real do que vem; ainda não salva dados. <span class="muted">Ativamos com as tabelas do banco + login.</span></div>`; }
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
+// ===================== FINANCEIRO — contas a pagar/receber =====================
+let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={};
+function titulosFiscais(){ return (L.titulos||[]); }
+function lancamentos(){ return (L.gestao_lancamentos||[]); }
+function avulsos(){ return lancamentos().filter(l=>l.origem==='avulso'); }
+function lancDeTitulo(id){ return lancamentos().find(l=>l.origem!=='avulso' && l.titulo_id===id); }
+async function recarregarLancamentos(){ L.gestao_lancamentos=await lerTabela('gestao_lancamentos'); }
+async function carregarItens(chave){
+  if(!chave) return [];
+  if(finItensCache[chave]) return finItensCache[chave];
+  const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,descricao,quantidade,valor_total,cfop&order=item`);
+  finItensCache[chave]=rows||[]; return finItensCache[chave];
+}
+function planoOptions(){
+  const seen=new Set(); let out='';
+  (L.planos||[]).forEach(p=>{ if(!p.descricao) return; const k=(p.codigo||'')+'|'+p.descricao; if(seen.has(k)) return; seen.add(k);
+    out+=`<option value="${esc((p.codigo||'')+' — '+p.descricao)}"></option>`; });
+  return out;
+}
+function parsePlano(v){ if(!v) return {codigo:null,descricao:null}; const i=v.indexOf(' — '); if(i<0) return {codigo:null,descricao:v.trim()||null}; return {codigo:v.slice(0,i).trim()||null, descricao:v.slice(i+3).trim()||null}; }
+function planoTxt(l){ if(!l) return '—'; if(l.rateio_tipo==='produto') return 'por produto'; return l.plano_descricao||l.plano_codigo||'—'; }
+function formaSelect(id,sel){ return `<select id="${id}">`+['','Dinheiro','PIX','Boleto','Transferência','Cartão','Cheque','A prazo'].map(x=>`<option value="${x}"${x===(sel||'')?' selected':''}>${x||'—'}</option>`).join('')+`</select>`; }
+function statusTag(l){ if(l&&l.pago) return '<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>'; if(l) return '<span class="tag" style="background:#fdf3e0;color:#9a6b1a">lançado</span>'; return '<span class="tag" style="background:#eef1f4;color:#56607a">pendente</span>'; }
+function finTab(tp){ finTipo=tp; finMode='lista'; render(); }
+function finNovoAvulso(){ finMode='avulso'; finAvulsoId=null; render(); }
+function finVoltar(){ finMode='lista'; render(); }
+function abrirTitulo(key){ if(key.slice(0,2)==='f:'){ finMode='detalhe'; finTituloId=key.slice(2); } else { finMode='avulso'; finAvulsoId=key.slice(2); } render(); }
+function valorEmAberto(tipo){
+  let s=0;
+  titulosFiscais().filter(t=>t.tipo_titulo===tipo).forEach(t=>{ const l=lancDeTitulo(t.id); if(!(l&&l.pago)) s+=Number(t.valor||0); });
+  avulsos().filter(a=>a.tipo_titulo===tipo).forEach(a=>{ if(!a.pago) s+=Number(a.valor||0); });
+  return s;
+}
 function renderFinanceiro(c){
-  const T=(L.titulos||[]);
-  const pagar=T.filter(t=>t.tipo_titulo==="pagar");
-  const receber=T.filter(t=>t.tipo_titulo==="receber");
-  const soma=arr=>arr.reduce((s,t)=>s+Number(t.valor||0),0);
-  const totPagar=soma(pagar), totReceber=soma(receber), saldo=totReceber-totPagar;
-  const dt=t=>t.data_emissao?fmtDate(String(t.data_emissao).slice(0,10)):"—";
-  const linha=t=>`<tr>
-      <td>${dt(t)}</td>
-      <td>${esc(t.contraparte_nome||"—")}</td>
-      <td>${esc(t.tipo_doc||"")}${t.numero?(" "+esc(t.numero)):""}</td>
-      <td class="money ${t.tipo_titulo==='pagar'?'neg':'pos'}" style="text-align:right">${fmtBRL(t.valor)}</td>
-      <td>${t.pago?'<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>':t.status==='lancado'?'<span class="tag" style="background:#fdf3e0;color:#9a6b1a">lançado</span>':'<span class="tag" style="background:#eef1f4;color:#56607a">novo</span>'}</td>
-    </tr>`;
-  const tabela=(arr,tit,cor)=>`
-    <div class="card">
-      <h3 style="color:${cor}">${tit} <span class="muted" style="font-weight:400">(${arr.length})</span></h3>
-      ${arr.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tit.includes('pagar')?'Fornecedor':'Cliente'}</th><th>Doc</th><th style="text-align:right">Valor</th><th>Situação</th></tr></thead>
-        <tbody>${arr.slice(0,60).map(linha).join("")}</tbody></table></div>
-        ${arr.length>60?`<p class="muted" style="margin-top:8px">Mostrando 60 de ${arr.length}. Baixe o Excel para a lista completa.</p>`:""}`
-        :'<div class="empty">Nenhum título.</div>'}
-    </div>`;
+  if(finMode==='detalhe') return renderTituloDetalhe(c);
+  if(finMode==='avulso') return renderAvulso(c);
+  const tipo=finTipo;
+  const fisc=titulosFiscais().filter(t=>t.tipo_titulo===tipo).map(t=>({ key:'f:'+t.id, contraparte:t.contraparte_nome, doc:(t.tipo_doc||'')+(t.numero?' '+t.numero:''), valor:Number(t.valor||0), data:t.data_emissao?String(t.data_emissao).slice(0,10):null, lanc:lancDeTitulo(t.id) }));
+  const avuls=avulsos().filter(a=>a.tipo_titulo===tipo).map(a=>({ key:'a:'+a.id, contraparte:a.contraparte_nome, doc:(a.descricao||'avulso')+' (avulso)', valor:Number(a.valor||0), data:a.data_emissao||null, lanc:a }));
+  const lista=fisc.concat(avuls).sort((x,y)=>String(y.data||'').localeCompare(String(x.data||'')));
+  const totPagar=valorEmAberto('pagar'), totReceber=valorEmAberto('receber'), saldo=totReceber-totPagar;
+  const row=it=>{ const l=it.lanc; return `<tr>
+      <td>${it.data?fmtDate(it.data):'—'}</td>
+      <td>${esc(it.contraparte||'—')}</td>
+      <td>${esc(it.doc||'')}</td>
+      <td class="num money ${tipo==='pagar'?'neg':'pos'}">${fmtBRL(it.valor)}</td>
+      <td>${l&&l.vencimento?fmtDate(l.vencimento):'—'}</td>
+      <td>${esc(planoTxt(l))}</td>
+      <td>${statusTag(l)}</td>
+      <td><button class="btn ghost" style="padding:4px 10px" onclick='abrirTitulo("${it.key}")'>${l?'Editar':'Lançar'}</button></td>
+    </tr>`; };
   c.innerHTML=`
-  <div class="pgtitle">💰 Financeiro</div>
-  <div class="pgsub">Contas a pagar e a receber — vindas do <b>SINTEGRA Lamarta</b> (notas fiscais). Atualiza sozinho a cada nota nova.</div>
-  <div class="card">
-    <div class="kpis">
-      <div class="kpi"><div class="v money neg">${fmtBRL(totPagar)}</div><div class="l">A pagar</div><div class="d">${pagar.length} título(s)</div></div>
-      <div class="kpi"><div class="v money pos">${fmtBRL(totReceber)}</div><div class="l">A receber</div><div class="d">${receber.length} título(s)</div></div>
-      <div class="kpi"><div class="v money" style="color:${saldo>=0?'var(--ok)':'var(--erro)'}">${fmtBRL(saldo)}</div><div class="l">Saldo previsto</div></div>
-    </div>
-    <div class="exports" style="margin-top:14px"><button class="btn gold" onclick="exportar('titulos')">⬇️ Baixar títulos (Excel)</button></div>
+  <div class="pgtitle">💰 Financeiro — contas a pagar e receber</div>
+  <div class="pgsub">Títulos do <b>SINTEGRA Lamarta</b> + lançamentos avulsos. Lance vencimento, forma de pagamento, plano de contas e rateio.</div>
+  <div class="card"><div class="kpis">
+    <div class="kpi"><div class="v money neg">${fmtBRL(totPagar)}</div><div class="l">A pagar (em aberto)</div></div>
+    <div class="kpi"><div class="v money pos">${fmtBRL(totReceber)}</div><div class="l">A receber (em aberto)</div></div>
+    <div class="kpi"><div class="v money" style="color:${saldo>=0?'#2e7d54':'#b23b3b'}">${fmtBRL(saldo)}</div><div class="l">Saldo previsto</div></div>
+  </div></div>
+  <div class="finabas">
+    <button class="${tipo==='pagar'?'on':''}" onclick="finTab('pagar')">A pagar</button>
+    <button class="${tipo==='receber'?'on':''}" onclick="finTab('receber')">A receber</button>
+    <button onclick="finNovoAvulso()">＋ Lançamento avulso</button>
   </div>
-  ${tabela(receber,"Contas a receber","var(--ok)")}
-  ${tabela(pagar,"Contas a pagar","var(--erro)")}
-  <div class="card" style="border-color:var(--ouro-cl);background:#fffdf6">
-    <h3>Próximo passo — lançar e dar baixa</h3>
-    <p class="muted" style="line-height:1.6">Por enquanto esta tela <b>mostra</b> os títulos que o SINTEGRA envia. O próximo passo é permitir <b>lançar</b> (marcar como registrado na gestão) e <b>dar baixa</b> (marcar pago, com data e conta) — aí o SINTEGRA concilia sozinho. É só me avisar quando quiser ativar.</p>
+  <div class="card">
+    <h3>${tipo==='pagar'?'Contas a pagar':'Contas a receber'} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
+    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Situação</th><th></th></tr></thead>
+    <tbody>${lista.slice(0,150).map(row).join('')}</tbody></table></div>${lista.length>150?`<p class="muted" style="margin-top:8px">Mostrando 150 de ${lista.length}.</p>`:''}`:'<div class="empty">Nenhum título.</div>'}
   </div>`;
+}
+function renderTituloDetalhe(c){
+  const t=titulosFiscais().find(x=>x.id===finTituloId);
+  if(!t){ finMode='lista'; return renderFinanceiro(c); }
+  const l=lancDeTitulo(t.id)||{};
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">Título a ${t.tipo_titulo==='pagar'?'pagar':'receber'}</div></div>
+   <div class="card"><table><tbody>
+     <tr><td>${t.tipo_titulo==='pagar'?'Fornecedor':'Cliente'}</td><td><b>${esc(t.contraparte_nome||'—')}</b></td></tr>
+     <tr><td>Documento</td><td>${esc(t.tipo_doc||'')} ${esc(t.numero||'')}${t.serie?(' · série '+esc(t.serie)):''}</td></tr>
+     <tr><td>Emissão</td><td>${t.data_emissao?fmtDate(String(t.data_emissao).slice(0,10)):'—'}</td></tr>
+     <tr><td>Valor</td><td class="money"><b>${fmtBRL(t.valor)}</b></td></tr>
+   </tbody></table></div>
+   <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>
+   <div class="card"><h3>Lançamento</h3>
+     <div class="grid">
+       <div class="field"><label>Vencimento</label><input id="lc_venc" type="date" value="${l.vencimento||''}"></div>
+       <div class="field"><label>Forma de pagamento</label>${formaSelect('lc_forma',l.forma_pagamento)}</div>
+     </div>
+     <div class="field"><label>Rateio</label><select id="lc_rateio" onchange="toggleRateio()">
+       <option value="total"${l.rateio_tipo!=='produto'?' selected':''}>Nota inteira (um plano de contas)</option>
+       <option value="produto"${l.rateio_tipo==='produto'?' selected':''}>Por produto (um plano por item)</option>
+     </select></div>
+     <div id="rateio-total" class="field"><label>Plano de contas</label><input id="lc_plano" list="planos-dl" value="${esc(l.plano_codigo?((l.plano_codigo||'')+' — '+(l.plano_descricao||'')):'')}" placeholder="digite código ou nome da conta"></div>
+     <div id="rateio-produto" style="display:none"><div class="muted" style="margin-bottom:6px">Plano de contas por produto:</div><div id="rateio-itens"></div></div>
+     <datalist id="planos-dl">${planoOptions()}</datalist>
+     <div class="grid" style="margin-top:10px">
+       <div class="field"><label><input type="checkbox" id="lc_pago" ${l.pago?'checked':''} onchange="var d=document.getElementById('lc_dpag');d.disabled=!this.checked;"> Pago</label></div>
+       <div class="field"><label>Data do pagamento</label><input id="lc_dpag" type="date" value="${l.data_pagamento||''}" ${l.pago?'':'disabled'}></div>
+     </div>
+     <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
+   </div>`;
+  toggleRateio();
+  carregarItens(t.nota_chave).then(items=>{
+    const box=document.getElementById('fin-itens');
+    if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Valor</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.descricao||'')}</td><td class="num">${it.quantidade||''}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nota sem itens detalhados.</div>';
+    const ri=document.getElementById('rateio-itens');
+    if(ri) ri.innerHTML=items.map((it,i)=>{ const r=(l.rateio&&l.rateio[i])||null; const pre=r?((r.plano_codigo||'')+' — '+(r.plano_descricao||'')):''; return `<div class="field"><label>${esc(it.descricao||('Item '+(i+1)))} · ${fmtBRL(it.valor_total)}</label><input id="lc_plano_${i}" list="planos-dl" value="${esc(pre.trim()==='—'?'':pre)}" placeholder="plano de contas"></div>`; }).join('');
+  }).catch(()=>{ const box=document.getElementById('fin-itens'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar os produtos.</div>'; });
+}
+function toggleRateio(){ const s=document.getElementById('lc_rateio'); if(!s) return; const v=s.value; const a=document.getElementById('rateio-total'), b=document.getElementById('rateio-produto'); if(a)a.style.display=v==='produto'?'none':'block'; if(b)b.style.display=v==='produto'?'block':'none'; }
+async function salvarLancamento(tituloId){
+  const t=titulosFiscais().find(x=>x.id===tituloId); if(!t) return;
+  const val=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const rateioTipo=val('lc_rateio')||'total';
+  let rateio=[], plano={codigo:null,descricao:null};
+  if(rateioTipo==='produto'){
+    const items=finItensCache[t.nota_chave]||[];
+    rateio=items.map((it,i)=>{ const pp=parsePlano(val('lc_plano_'+i)); return {descricao:it.descricao, valor:Number(it.valor_total||0), plano_codigo:pp.codigo, plano_descricao:pp.descricao}; });
+  } else { plano=parsePlano(val('lc_plano')); }
+  const pago=document.getElementById('lc_pago')&&document.getElementById('lc_pago').checked;
+  const doc={ origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:t.data_emissao?String(t.data_emissao).slice(0,10):null,
+    vencimento:val('lc_venc')||null, forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
+    pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
+  const ex=lancDeTitulo(t.id);
+  try{
+    if(ex) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${ex.id}`, {doc});
+    else await reqWrite('POST', `/rest/v1/gestao_lancamentos`, {doc});
+    await recarregarLancamentos(); finMode='lista'; render();
+  }catch(e){ alert('Erro ao salvar: '+(e.message||e)); }
+}
+function renderAvulso(c){
+  const a=finAvulsoId?(avulsos().find(x=>x.id===finAvulsoId)||{}):{};
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">Lançamento avulso</div></div>
+   <div class="card">
+     <div class="grid">
+       <div class="field"><label>Tipo</label><select id="av_tipo"><option value="pagar"${a.tipo_titulo!=='receber'?' selected':''}>A pagar</option><option value="receber"${a.tipo_titulo==='receber'?' selected':''}>A receber</option></select></div>
+       <div class="field"><label>Fornecedor / Cliente</label><input id="av_contra" value="${esc(a.contraparte_nome||'')}"></div>
+       <div class="field"><label>Descrição</label><input id="av_desc" value="${esc(a.descricao||'')}"></div>
+       <div class="field"><label>Valor (R$)</label><input id="av_valor" type="number" step="0.01" value="${a.valor!=null?a.valor:''}"></div>
+       <div class="field"><label>Emissão</label><input id="av_emiss" type="date" value="${a.data_emissao||''}"></div>
+       <div class="field"><label>Vencimento</label><input id="av_venc" type="date" value="${a.vencimento||''}"></div>
+       <div class="field"><label>Forma de pagamento</label>${formaSelect('av_forma',a.forma_pagamento)}</div>
+       <div class="field"><label>Plano de contas</label><input id="av_plano" list="planos-dl" value="${esc(a.plano_codigo?((a.plano_codigo||'')+' — '+(a.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div>
+     </div>
+     <datalist id="planos-dl">${planoOptions()}</datalist>
+     <div class="grid" style="margin-top:10px">
+       <div class="field"><label><input type="checkbox" id="av_pago" ${a.pago?'checked':''} onchange="var d=document.getElementById('av_dpag');d.disabled=!this.checked;"> Pago</label></div>
+       <div class="field"><label>Data do pagamento</label><input id="av_dpag" type="date" value="${a.data_pagamento||''}" ${a.pago?'':'disabled'}></div>
+     </div>
+     <button class="btn" onclick='salvarAvulso(${finAvulsoId?`"${finAvulsoId}"`:'null'})'>Salvar</button>
+     ${finAvulsoId?`<button class="btn ghost" style="margin-left:8px" onclick='excluirAvulso("${finAvulsoId}")'>Excluir</button>`:''}
+   </div>`;
+}
+async function salvarAvulso(avulsoId){
+  const val=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const valor=parseFloat(val('av_valor'))||0;
+  if(!valor){ alert('Informe o valor.'); return; }
+  const pp=parsePlano(val('av_plano'));
+  const pago=document.getElementById('av_pago')&&document.getElementById('av_pago').checked;
+  const doc={ origem:'avulso', tipo_titulo:val('av_tipo')||'pagar', contraparte_nome:val('av_contra')||null, descricao:val('av_desc')||null, valor,
+    data_emissao:val('av_emiss')||null, vencimento:val('av_venc')||null, forma_pagamento:val('av_forma')||null, plano_codigo:pp.codigo, plano_descricao:pp.descricao,
+    rateio_tipo:'total', rateio:[], pago:!!pago, data_pagamento:pago?(val('av_dpag')||null):null, atualizado_em:new Date().toISOString() };
+  try{
+    if(avulsoId) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${avulsoId}`, {doc});
+    else await reqWrite('POST', `/rest/v1/gestao_lancamentos`, {doc});
+    await recarregarLancamentos(); finMode='lista'; finTipo=doc.tipo_titulo; render();
+  }catch(e){ alert('Erro ao salvar: '+(e.message||e)); }
+}
+async function excluirAvulso(id){
+  if(!confirm('Excluir este lançamento avulso?')) return;
+  try{ await reqWrite('DELETE', `/rest/v1/gestao_lancamentos?id=eq.${id}`); await recarregarLancamentos(); finMode='lista'; render(); }
+  catch(e){ alert('Erro: '+(e.message||e)); }
 }
 
 function veiculoDaPosicaoG(vs,pos){ let acc=0; for(let k=0;k<(vs||[]).length;k++){ acc+=(vs[k].capacidade||0); if(pos<acc) return k; } return Math.max(0,(vs||[]).length-1); }
