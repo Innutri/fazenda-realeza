@@ -554,15 +554,15 @@ function renderFinanceiro(c){
   const avuls=avulsos().filter(a=>a.tipo_titulo===tipo).map(a=>({ key:'a:'+a.id, contraparte:a.contraparte_nome, doc:(a.descricao||'avulso')+' (avulso)', valor:Number(a.valor||0), data:a.data_emissao||null, lanc:a }));
   const lista=fisc.concat(avuls).sort((x,y)=>String(y.data||'').localeCompare(String(x.data||'')));
   const totPagar=valorEmAberto('pagar'), totReceber=valorEmAberto('receber'), saldo=totReceber-totPagar;
-  const row=it=>{ const l=it.lanc; return `<tr>
+  const row=it=>{ const l=it.lanc; return `<tr onclick='abrirTitulo("${it.key}")' style="cursor:pointer">
       <td>${it.data?fmtDate(it.data):'—'}</td>
-      <td>${esc(it.contraparte||'—')}</td>
+      <td><b>${esc(it.contraparte||'—')}</b></td>
       <td>${esc(it.doc||'')}</td>
       <td class="num money ${tipo==='pagar'?'neg':'pos'}">${fmtBRL(it.valor)}</td>
       <td>${l&&l.vencimento?fmtDate(l.vencimento):'—'}</td>
       <td>${esc(planoTxt(l))}</td>
       <td>${statusTag(l)}</td>
-      <td><button class="btn ghost" style="padding:4px 10px" onclick='abrirTitulo("${it.key}")'>${l?'Editar':'Lançar'}</button></td>
+      <td><button class="btn ghost" style="padding:4px 10px" onclick='event.stopPropagation();abrirTitulo("${it.key}")'>${l?'Editar':'Lançar'} ›</button></td>
     </tr>`; };
   c.innerHTML=`
   <div class="pgtitle">💰 Financeiro — contas a pagar e receber</div>
@@ -588,16 +588,13 @@ function renderTituloDetalhe(c){
   if(!t){ finMode='lista'; return renderFinanceiro(c); }
   const l=lancDeTitulo(t.id)||{};
   c.innerHTML=`
-   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">Título a ${t.tipo_titulo==='pagar'?'pagar':'receber'}</div></div>
-   <div class="card"><table><tbody>
-     <tr><td>${t.tipo_titulo==='pagar'?'Fornecedor':'Cliente'}</td><td><b>${esc(t.contraparte_nome||'—')}</b></td></tr>
-     <tr><td>Documento</td><td>${esc(t.tipo_doc||'')} ${esc(t.numero||'')}${t.serie?(' · série '+esc(t.serie)):''}</td></tr>
-     <tr><td>Emissão</td><td>${t.data_emissao?fmtDate(String(t.data_emissao).slice(0,10)):'—'}</td></tr>
-     <tr><td>Valor</td><td class="money"><b>${fmtBRL(t.valor)}</b></td></tr>
-   </tbody></table></div>
-   <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>
-   <div class="card"><h3>Lançamento</h3>
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">Título a ${t.tipo_titulo==='pagar'?'pagar':'receber'} — ${esc(t.contraparte_nome||'')}</div></div>
+   <div class="card">
      <div class="grid">
+       <div class="field"><label>${t.tipo_titulo==='pagar'?'Fornecedor':'Cliente'}</label><input value="${esc(t.contraparte_nome||'')}" disabled></div>
+       <div class="field"><label>Documento</label><input value="${esc((t.tipo_doc||'')+' '+(t.numero||'')+(t.serie?(' · série '+t.serie):''))}" disabled></div>
+       <div class="field"><label>Emissão</label><input value="${t.data_emissao?fmtDate(String(t.data_emissao).slice(0,10)):''}" disabled></div>
+       <div class="field"><label>Valor</label><input value="${fmtBRL(t.valor)}" disabled></div>
        <div class="field"><label>Vencimento</label><input id="lc_venc" type="date" value="${l.vencimento||''}"></div>
        <div class="field"><label>Forma de pagamento</label>${formaSelect('lc_forma',l.forma_pagamento)}</div>
      </div>
@@ -613,7 +610,8 @@ function renderTituloDetalhe(c){
        <div class="field"><label>Data do pagamento</label><input id="lc_dpag" type="date" value="${l.data_pagamento||''}" ${l.pago?'':'disabled'}></div>
      </div>
      <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
-   </div>`;
+   </div>
+   <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
   toggleRateio();
   carregarItens(t.nota_chave).then(items=>{
     const box=document.getElementById('fin-itens');
