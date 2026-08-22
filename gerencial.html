@@ -672,6 +672,13 @@ function renderTituloDetalhe(c){
     }
     const finp=document.getElementById('lc_forma');
     if(finp && !finp.value && pg.forma) finp.value=pg.forma;
+    // nota à vista paga no ato (dinheiro/cartão/PIX/transferência, sem parcela) → já marca pago
+    const semLanc=!l.titulo_id;
+    const imediato=pg.forma && ['Dinheiro','Cartão','PIX','Transferência'].includes(pg.forma);
+    if(semLanc && !ps.length && imediato){
+      const pgc=document.getElementById('lc_pago'), dpg=document.getElementById('lc_dpag');
+      if(pgc && !pgc.checked){ pgc.checked=true; if(dpg){ dpg.disabled=false; if(!dpg.value && t.data_emissao) dpg.value=String(t.data_emissao).slice(0,10); } }
+    }
     const box=document.getElementById('fin-parcelas');
     if(box && ps.length>1){
       box.innerHTML=`<div class="muted" style="margin:4px 0 6px">Nota parcelada — ${ps.length} parcela(s), vindas da nota:</div><div style="overflow-x:auto"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${ps.map(p=>`<tr><td>${esc(p.n||'')}</td><td>${p.venc?fmtDate(p.venc):'—'}</td><td class="num money">${fmtBRL(p.valor)}</td></tr>`).join('')}</tbody></table></div>`;
