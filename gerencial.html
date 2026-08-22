@@ -575,6 +575,53 @@ async function carregarPagamento(chave){
   if(n && n.xml_storage_path && n.xml_completo){ try{ const x=await parseXMLDados(n.xml_storage_path); res={parcelas:x.parcelas||[], forma:x.forma||null}; }catch(e){} }
   finPagto[chave]=res; return res;
 }
+async function mapLimit(arr, limit, fn, onProgress){
+  const out=[]; let idx=0, done=0;
+  async function worker(){ while(idx<arr.length){ const i=idx++; try{ out[i]=await fn(arr[i], i); }catch(e){ out[i]=null; } done++; if(onProgress) onProgress(done, arr.length); } }
+  const ws=[]; for(let k=0;k<Math.min(limit,arr.length);k++) ws.push(worker());
+  await Promise.all(ws); return out;
+}
+async function docAutomatico(t){
+  let pg={parcelas:[],forma:null};
+  try{ pg=await carregarPagamento(t.nota_chave); }catch(e){}
+  const ps=pg.parcelas||[];
+  const emiss=t.data_emissao?String(t.data_emissao).slice(0,10):null;
+  const venc=(ps.length && ps[0].venc)?ps[0].venc:emiss;
+  const imediato=pg.forma && ['Dinheiro','Cartão','PIX','Transferência'].includes(pg.forma);
+  const pago=(!ps.length && imediato);
+  return { origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:emiss,
+    vencimento:venc||null, parcelas:ps, forma_pagamento:pg.forma||null, rateio_tipo:'total', rateio:[], plano_codigo:null, plano_descricao:null,
+    pago:pago, data_pagamento:pago?emiss:null, atualizado_em:new Date().toISOString(), auto:true };
+}
+async function lancarTodos(){
+  const pend=titulosFiscais().filter(t=>t.nota_chave && !lancDeTitulo(t.id));
+  if(!pend.length){ alert('Não há títulos pendentes para lançar.'); return; }
+  if(!confirm(`Lançar automaticamente ${pend.length} título(s) pendentes?\n\n• Vencimento e forma de pagamento vêm da nota.\n• Compras à vista pagas no ato entram como PAGAS.\n• O plano de contas fica em branco para você preencher depois.\n\nVocê pode desfazer depois no botão "Desfazer automáticos".`)) return;
+  const c=document.getElementById('conteudo');
+  c.innerHTML=`<div class="pgtitle">⚡ Lançando automático…</div><div class="card"><b><span id="lt-prog">0</span> de ${pend.length}</b> títulos processados. <div class="muted" style="margin-top:6px">Lendo as notas fiscais (pode levar um minuto).</div></div>`;
+  // pré-carrega os cabeçalhos das notas (1 requisição)
+  try{ const notas=await req(`/rest/v1/fiscal_notas?select=chave,xml_storage_path,xml_completo,data_emissao,operacao&limit=5000`, true); (notas||[]).forEach(n=>{ if(n.chave) finNotaCache[n.chave]=n; }); }catch(e){}
+  const docs=(await mapLimit(pend, 6, docAutomatico, (d)=>{ const e=document.getElementById('lt-prog'); if(e) e.textContent=d; })).filter(Boolean);
+  let gravados=0;
+  for(let i=0;i<docs.length;i+=150){
+    const chunk=docs.slice(i,i+150).map(d=>({doc:d}));
+    try{ await reqWrite('POST','/rest/v1/gestao_lancamentos', chunk); gravados+=chunk.length; }catch(e){ console.error('lote', e); }
+  }
+  await recarregarLancamentos(); finMode='lista'; render();
+  alert(`Pronto! ${gravados} título(s) lançados automaticamente. Confira e ajuste o plano de contas em cada um.`);
+}
+async function desfazerAutomaticos(){
+  const autos=(L.gestao_lancamentos||[]).filter(l=>l.auto);
+  if(!autos.length){ alert('Não há lançamentos automáticos para desfazer.'); return; }
+  if(!confirm(`Desfazer ${autos.length} lançamento(s) automáticos? Os títulos voltam a ficar pendentes. (Lançamentos que você editou/salvou manualmente não são afetados.)`)) return;
+  const ids=autos.map(l=>l.id);
+  for(let i=0;i<ids.length;i+=150){
+    const lote=ids.slice(i,i+150).join(',');
+    try{ await reqWrite('DELETE',`/rest/v1/gestao_lancamentos?id=in.(${lote})`); }catch(e){ console.error(e); }
+  }
+  await recarregarLancamentos(); render();
+  alert('Lançamentos automáticos desfeitos.');
+}
 function planoOptions(){
   const seen=new Set(); let out='';
   (L.planos||[]).forEach(p=>{ if(!p.descricao) return; const k=(p.codigo||'')+'|'+p.descricao; if(seen.has(k)) return; seen.add(k);
@@ -625,6 +672,8 @@ function renderFinanceiro(c){
     <button class="${tipo==='pagar'?'on':''}" onclick="finTab('pagar')">A pagar</button>
     <button class="${tipo==='receber'?'on':''}" onclick="finTab('receber')">A receber</button>
     <button onclick="finNovoAvulso()">＋ Lançamento avulso</button>
+    <button onclick="lancarTodos()" style="margin-left:auto;background:#c9a44a;color:#2e2508;border-color:#b28f35">⚡ Lançar automático</button>
+    ${(L.gestao_lancamentos||[]).some(l=>l.auto)?`<button onclick="desfazerAutomaticos()">↩︎ Desfazer automáticos</button>`:''}
   </div>
   <div class="card">
     <h3>${tipo==='pagar'?'Contas a pagar':'Contas a receber'} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
