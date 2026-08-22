@@ -531,8 +531,8 @@ async function carregarNota(chave){
   return finNotaCache[chave];
 }
 async function itensDaTabela(chave){
-  const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,descricao,quantidade,valor_total,cfop&order=item`);
-  return rows||[];
+  const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,codigo,descricao,ncm,cfop,unidade,quantidade,valor_unit,valor_total&order=item`);
+  return (rows||[]).map(r=>({ item:r.item, codigo:r.codigo, descricao:r.descricao, ncm:r.ncm, cfop:r.cfop, unidade:r.unidade, quantidade:r.quantidade, valor_unit:r.valor_unit, valor_total:r.valor_total }));
 }
 async function itensDoXML(path){
   const token=await garantirToken();
@@ -547,7 +547,7 @@ async function itensDoXML(path){
   const get=(el,tag)=>{ if(!el) return ""; const n=el.getElementsByTagName(tag); return n.length?(n[0].textContent||"").trim():""; };
   return Array.from(docx.getElementsByTagName("det")).map((d,i)=>{
     const prod=d.getElementsByTagName("prod")[0]; if(!prod) return null;
-    return { item:d.getAttribute("nItem")||String(i+1), descricao:get(prod,"xProd"), quantidade:get(prod,"qCom"), valor_total:parseFloat(get(prod,"vProd")||"0")||0, cfop:get(prod,"CFOP"), ncm:get(prod,"NCM") };
+    return { item:d.getAttribute("nItem")||String(i+1), codigo:get(prod,"cProd"), descricao:get(prod,"xProd"), ncm:get(prod,"NCM"), cfop:get(prod,"CFOP"), unidade:get(prod,"uCom"), quantidade:get(prod,"qCom"), valor_unit:parseFloat(get(prod,"vUnCom")||"0")||0, valor_total:parseFloat(get(prod,"vProd")||"0")||0 };
   }).filter(Boolean);
 }
 async function carregarItens(chave){
@@ -596,7 +596,7 @@ function renderFinanceiro(c){
       <td>${l&&l.vencimento?fmtDate(l.vencimento):'—'}</td>
       <td>${esc(planoTxt(l))}</td>
       <td>${statusTag(l)}</td>
-      <td><button class="btn ghost" style="padding:4px 10px" onclick='event.stopPropagation();abrirTitulo("${it.key}")'>${l?'Editar':'Lançar'} ›</button></td>
+      <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px;white-space:nowrap" onclick='event.stopPropagation();abrirTitulo("${it.key}")'>${l?'✏️ Editar':'Lançar ›'}</button></td>
     </tr>`; };
   c.innerHTML=`
   <div class="pgtitle">💰 Financeiro — contas a pagar e receber</div>
@@ -613,7 +613,7 @@ function renderFinanceiro(c){
   </div>
   <div class="card">
     <h3>${tipo==='pagar'?'Contas a pagar':'Contas a receber'} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
-    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Situação</th><th></th></tr></thead>
+    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Situação</th><th>Ação</th></tr></thead>
     <tbody>${lista.slice(0,150).map(row).join('')}</tbody></table></div>${lista.length>150?`<p class="muted" style="margin-top:8px">Mostrando 150 de ${lista.length}.</p>`:''}`:'<div class="empty">Nenhum título.</div>'}
   </div>`;
 }
@@ -667,7 +667,8 @@ function renderTituloDetalhe(c){
   }).catch(()=>{ const box=document.getElementById('fin-nota'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar a nota.</div>'; });
   carregarItens(t.nota_chave).then(items=>{
     const box=document.getElementById('fin-itens');
-    if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Descrição</th><th class="num">Qtd</th><th class="num">Valor</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.descricao||'')}</td><td class="num">${it.quantidade||''}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nota sem itens detalhados.</div>';
+    const q=v=>(v!==''&&v!=null&&!isNaN(v))?Number(v).toLocaleString('pt-BR',{maximumFractionDigits:4}):esc(v||'');
+    if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Cód.</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.codigo||'—')}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td>${esc(it.unidade||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num money">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nota sem itens detalhados.</div>';
     const ri=document.getElementById('rateio-itens');
     if(ri) ri.innerHTML=items.map((it,i)=>{ const r=(l.rateio&&l.rateio[i])||null; const pre=r?((r.plano_codigo||'')+' — '+(r.plano_descricao||'')):''; return `<div class="field"><label>${esc(it.descricao||('Item '+(i+1)))} · ${fmtBRL(it.valor_total)}</label><input id="lc_plano_${i}" list="planos-dl" value="${esc(pre.trim()==='—'?'':pre)}" placeholder="plano de contas"></div>`; }).join('');
   }).catch(()=>{ const box=document.getElementById('fin-itens'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar os produtos.</div>'; });
