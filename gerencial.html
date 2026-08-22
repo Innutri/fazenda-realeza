@@ -244,6 +244,14 @@ async function lerPlanos(){
   try{ return await req(`/rest/v1/fiscal_plano_contas?select=codigo,reduzido,descricao,tipo&order=codigo&limit=3000`); }
   catch(e){ return []; }
 }
+async function lerProdutorId(){
+  try{ const r=await req(`/rest/v1/gestao_app_produtores?app_slug=eq.${APP_SLUG}&select=produtor_id`, true); return (r&&r[0])?r[0].produtor_id:null; }catch(e){ return null; }
+}
+async function lerPropriedades(){
+  try{ const pid=await lerProdutorId();
+    const url = pid? `/rest/v1/fiscal_propriedades?produtor_id=eq.${pid}&select=id,nome,municipio,uf&order=nome` : `/rest/v1/fiscal_propriedades?select=id,nome,municipio,uf&order=nome`;
+    return await req(url); }catch(e){ return []; }
+}
 
 function mostrarLogin(msg){
   document.getElementById("shell").style.display="none";
@@ -324,6 +332,7 @@ async function carregar(){
     for(const t of TABELAS) L[t]=await lerTabela(t);
     L.titulos=await lerTitulos();
     L.planos=await lerPlanos();
+    L.propriedades=await lerPropriedades();
     est.style.display="none"; shell.style.display="flex";
     document.getElementById("topright").innerHTML=`
       <span class="userchip">👤 <b>${esc(SESSION.email)}</b></span>
@@ -629,6 +638,8 @@ function planoOptions(){
   return out;
 }
 function parsePlano(v){ if(!v) return {codigo:null,descricao:null}; const i=v.indexOf(' — '); if(i<0) return {codigo:null,descricao:v.trim()||null}; return {codigo:v.slice(0,i).trim()||null, descricao:v.slice(i+3).trim()||null}; }
+function propOptions(sel){ let o='<option value="">— não definida —</option>'; (L.propriedades||[]).forEach(p=>{ o+=`<option value="${esc(p.id)}"${p.id===sel?' selected':''}>${esc(p.nome)}${p.municipio?(' · '+esc(p.municipio)):''}</option>`; }); return o; }
+function propNome(id){ const p=(L.propriedades||[]).find(x=>x.id===id); return p?p.nome:null; }
 function planoTxt(l){ if(!l) return '—'; if(l.rateio_tipo==='produto') return 'por produto'; return l.plano_descricao||l.plano_codigo||'—'; }
 function formaSelect(id,sel){ return `<select id="${id}">`+['','Dinheiro','PIX','Boleto','Transferência','Cartão','Cheque','A prazo'].map(x=>`<option value="${x}"${x===(sel||'')?' selected':''}>${x||'—'}</option>`).join('')+`</select>`; }
 function statusTag(l){ if(l&&l.pago) return '<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>'; if(l) return '<span class="tag" style="background:#fdf3e0;color:#9a6b1a">lançado</span>'; return '<span class="tag" style="background:#eef1f4;color:#56607a">pendente</span>'; }
@@ -657,6 +668,7 @@ function renderFinanceiro(c){
       <td class="num money ${tipo==='pagar'?'neg':'pos'}">${fmtBRL(it.valor)}</td>
       <td>${l&&l.vencimento?fmtDate(l.vencimento):'—'}</td>
       <td>${esc(planoTxt(l))}</td>
+      <td>${esc((l&&l.propriedade_nome)||'—')}</td>
       <td>${statusTag(l)}</td>
       <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px;white-space:nowrap" onclick='event.stopPropagation();abrirTitulo("${it.key}")'>${l?'✏️ Editar':'Lançar ›'}</button></td>
     </tr>`; };
@@ -677,7 +689,7 @@ function renderFinanceiro(c){
   </div>
   <div class="card">
     <h3>${tipo==='pagar'?'Contas a pagar':'Contas a receber'} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
-    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Situação</th><th>Ação</th></tr></thead>
+    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Propriedade</th><th>Situação</th><th>Ação</th></tr></thead>
     <tbody>${lista.slice(0,150).map(row).join('')}</tbody></table></div>${lista.length>150?`<p class="muted" style="margin-top:8px">Mostrando 150 de ${lista.length}.</p>`:''}`:'<div class="empty">Nenhum título.</div>'}
   </div>`;
 }
@@ -695,6 +707,7 @@ function renderTituloDetalhe(c){
        <div class="field"><label>Valor</label><input value="${fmtBRL(t.valor)}" disabled></div>
        <div class="field"><label>Vencimento</label><input id="lc_venc" type="date" value="${l.vencimento||''}"></div>
        <div class="field"><label>Forma de pagamento</label>${formaSelect('lc_forma',l.forma_pagamento)}</div>
+       <div class="field"><label>Propriedade (a que fazenda pertence)</label><select id="lc_prop">${propOptions(l.propriedade_id)}</select></div>
      </div>
      <div class="field"><label>Rateio</label><select id="lc_rateio" onchange="toggleRateio()">
        <option value="total"${l.rateio_tipo!=='produto'?' selected':''}>Nota inteira (um plano de contas)</option>
@@ -752,8 +765,9 @@ async function salvarLancamento(tituloId){
     rateio=items.map((it,i)=>{ const pp=parsePlano(val('lc_plano_'+i)); return {descricao:it.descricao, valor:Number(it.valor_total||0), plano_codigo:pp.codigo, plano_descricao:pp.descricao}; });
   } else { plano=parsePlano(val('lc_plano')); }
   const pago=document.getElementById('lc_pago')&&document.getElementById('lc_pago').checked;
+  const propId=val('lc_prop')||null;
   const doc={ origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:t.data_emissao?String(t.data_emissao).slice(0,10):null,
-    vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
+    vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
     pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
   const ex=lancDeTitulo(t.id);
   try{
@@ -775,6 +789,7 @@ function renderAvulso(c){
        <div class="field"><label>Emissão</label><input id="av_emiss" type="date" value="${a.data_emissao||''}"></div>
        <div class="field"><label>Vencimento</label><input id="av_venc" type="date" value="${a.vencimento||''}"></div>
        <div class="field"><label>Forma de pagamento</label>${formaSelect('av_forma',a.forma_pagamento)}</div>
+       <div class="field"><label>Propriedade</label><select id="av_prop">${propOptions(a.propriedade_id)}</select></div>
        <div class="field"><label>Plano de contas</label><input id="av_plano" list="planos-dl" value="${esc(a.plano_codigo?((a.plano_codigo||'')+' — '+(a.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div>
      </div>
      <datalist id="planos-dl">${planoOptions()}</datalist>
@@ -792,8 +807,9 @@ async function salvarAvulso(avulsoId){
   if(!valor){ alert('Informe o valor.'); return; }
   const pp=parsePlano(val('av_plano'));
   const pago=document.getElementById('av_pago')&&document.getElementById('av_pago').checked;
+  const propId=val('av_prop')||null;
   const doc={ origem:'avulso', tipo_titulo:val('av_tipo')||'pagar', contraparte_nome:val('av_contra')||null, descricao:val('av_desc')||null, valor,
-    data_emissao:val('av_emiss')||null, vencimento:val('av_venc')||null, forma_pagamento:val('av_forma')||null, plano_codigo:pp.codigo, plano_descricao:pp.descricao,
+    data_emissao:val('av_emiss')||null, vencimento:val('av_venc')||null, forma_pagamento:val('av_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), plano_codigo:pp.codigo, plano_descricao:pp.descricao,
     rateio_tipo:'total', rateio:[], pago:!!pago, data_pagamento:pago?(val('av_dpag')||null):null, atualizado_em:new Date().toISOString() };
   try{
     if(avulsoId) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${avulsoId}`, {doc});
