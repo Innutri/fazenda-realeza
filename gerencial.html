@@ -514,7 +514,7 @@ function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
 // ===================== FINANCEIRO — contas a pagar/receber =====================
-let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={};
+let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={}, finXmlCache={}, finParcelas={};
 function titulosFiscais(){ return (L.titulos||[]); }
 function lancamentos(){ return (L.gestao_lancamentos||[]); }
 function avulsos(){ return lancamentos().filter(l=>l.origem==='avulso'); }
@@ -534,21 +534,25 @@ async function itensDaTabela(chave){
   const rows=await req(`/rest/v1/fiscal_nota_itens?chave=eq.${encodeURIComponent(chave)}&select=item,codigo,descricao,ncm,cfop,unidade,quantidade,valor_unit,valor_total&order=item`);
   return (rows||[]).map(r=>({ item:r.item, codigo:r.codigo, descricao:r.descricao, ncm:r.ncm, cfop:r.cfop, unidade:r.unidade, quantidade:r.quantidade, valor_unit:r.valor_unit, valor_total:r.valor_total }));
 }
-async function itensDoXML(path){
+async function fetchXmlTxt(path){
   const token=await garantirToken();
   const url=SB_URL+"/storage/v1/object/xmls-fiscais/"+encodeURI(path);
-  const txt=await new Promise((resolve,reject)=>{
+  return await new Promise((resolve,reject)=>{
     const x=new XMLHttpRequest();
     x.open("GET",url,true); x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+token); x.timeout=20000;
     x.onload=()=>{ if(x.status>=200&&x.status<300) resolve(x.responseText); else reject(new Error("HTTP "+x.status)); };
     x.onerror=()=>reject(new Error("rede")); x.ontimeout=()=>reject(new Error("timeout")); x.send();
   });
+}
+async function parseXMLDados(path){
+  if(finXmlCache[path]) return finXmlCache[path];
+  const txt=await fetchXmlTxt(path);
   const docx=new DOMParser().parseFromString(txt,"application/xml");
   const get=(el,tag)=>{ if(!el) return ""; const n=el.getElementsByTagName(tag); return n.length?(n[0].textContent||"").trim():""; };
-  return Array.from(docx.getElementsByTagName("det")).map((d,i)=>{
-    const prod=d.getElementsByTagName("prod")[0]; if(!prod) return null;
-    return { item:d.getAttribute("nItem")||String(i+1), codigo:get(prod,"cProd"), descricao:get(prod,"xProd"), ncm:get(prod,"NCM"), cfop:get(prod,"CFOP"), unidade:get(prod,"uCom"), quantidade:get(prod,"qCom"), valor_unit:parseFloat(get(prod,"vUnCom")||"0")||0, valor_total:parseFloat(get(prod,"vProd")||"0")||0 };
-  }).filter(Boolean);
+  const items=Array.from(docx.getElementsByTagName("det")).map((d,i)=>{ const prod=d.getElementsByTagName("prod")[0]; if(!prod) return null;
+    return { item:d.getAttribute("nItem")||String(i+1), codigo:get(prod,"cProd"), descricao:get(prod,"xProd"), ncm:get(prod,"NCM"), cfop:get(prod,"CFOP"), unidade:get(prod,"uCom"), quantidade:get(prod,"qCom"), valor_unit:parseFloat(get(prod,"vUnCom")||"0")||0, valor_total:parseFloat(get(prod,"vProd")||"0")||0 }; }).filter(Boolean);
+  const parcelas=Array.from(docx.getElementsByTagName("dup")).map(d=>({ n:get(d,"nDup"), venc:get(d,"dVenc"), valor:parseFloat(get(d,"vDup")||"0")||0 })).filter(p=>p.venc||p.valor);
+  const res={items,parcelas}; finXmlCache[path]=res; return res;
 }
 async function carregarItens(chave){
   if(!chave) return [];
@@ -556,9 +560,16 @@ async function carregarItens(chave){
   let items=await itensDaTabela(chave);
   if(!items.length){
     const n=await carregarNota(chave);
-    if(n && n.xml_storage_path && n.xml_completo){ try{ items=await itensDoXML(n.xml_storage_path); }catch(e){ items=[]; } }
+    if(n && n.xml_storage_path && n.xml_completo){ try{ items=(await parseXMLDados(n.xml_storage_path)).items; }catch(e){ items=[]; } }
   }
   finItensCache[chave]=items; return items;
+}
+async function carregarParcelas(chave){
+  if(finParcelas[chave]) return finParcelas[chave];
+  let ps=[];
+  const n=await carregarNota(chave);
+  if(n && n.xml_storage_path && n.xml_completo){ try{ ps=(await parseXMLDados(n.xml_storage_path)).parcelas; }catch(e){ ps=[]; } }
+  finParcelas[chave]=ps; return ps;
 }
 function planoOptions(){
   const seen=new Set(); let out='';
@@ -643,27 +654,32 @@ function renderTituloDetalhe(c){
        <div class="field"><label><input type="checkbox" id="lc_pago" ${l.pago?'checked':''} onchange="var d=document.getElementById('lc_dpag');d.disabled=!this.checked;"> Pago</label></div>
        <div class="field"><label>Data do pagamento</label><input id="lc_dpag" type="date" value="${l.data_pagamento||''}" ${l.pago?'':'disabled'}></div>
      </div>
+     <div id="fin-parcelas"></div>
      <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
    </div>
    <div class="card"><h3>Dados da nota fiscal</h3><div id="fin-nota"><div class="muted">Carregando…</div></div></div>
    <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
   toggleRateio();
+  carregarParcelas(t.nota_chave).then(ps=>{
+    const vinp=document.getElementById('lc_venc');
+    if(ps.length && vinp && !vinp.value && ps[0].venc) vinp.value=ps[0].venc;
+    const box=document.getElementById('fin-parcelas');
+    if(box && ps.length>1){
+      box.innerHTML=`<div class="muted" style="margin:4px 0 6px">Nota parcelada — ${ps.length} parcela(s), vindas da nota:</div><div style="overflow-x:auto"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${ps.map(p=>`<tr><td>${esc(p.n||'')}</td><td>${p.venc?fmtDate(p.venc):'—'}</td><td class="num money">${fmtBRL(p.valor)}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+  }).catch(()=>{});
   carregarNota(t.nota_chave).then(n=>{
     const box=document.getElementById('fin-nota'); if(!box) return;
     if(!n){ box.innerHTML='<div class="muted">Sem dados adicionais da nota.</div>'; return; }
     const emit=`<b>${esc(n.emitente_nome||'—')}</b>`+(n.emitente_doc?(' · CNPJ '+esc(n.emitente_doc)):'')+(n.emitente_ie?(' · IE '+esc(n.emitente_ie)):'')+(n.emitente_uf?(' · '+esc(n.emitente_uf)):'');
-    const dest=esc(n.destinatario_nome||'—')+(n.destinatario_doc?(' · '+esc(n.destinatario_doc)):'')+(n.destinatario_uf?(' · '+esc(n.destinatario_uf)):'');
-    box.innerHTML=`<table><tbody>
-      <tr><td>Emitente</td><td>${emit}</td></tr>
-      <tr><td>Destinatário</td><td>${dest}</td></tr>
-      <tr><td>Natureza da operação</td><td>${esc(n.natureza||'—')}</td></tr>
-      <tr><td>CFOP</td><td>${esc(n.cfops||'—')}</td></tr>
-      <tr><td>Operação</td><td>${esc(n.operacao||'—')}${n.situacao?(' · '+esc(n.situacao)):''}</td></tr>
-      <tr><td>Produtos (resumo)</td><td>${esc(n.descricao||'—')}</td></tr>
-      <tr><td>Qtd. de itens</td><td>${n.qtd_itens!=null?n.qtd_itens:'—'}</td></tr>
-      <tr><td>Nº / série</td><td>${esc(n.numero||'—')}${n.serie?(' / '+esc(n.serie)):''}</td></tr>
-      <tr><td>Chave de acesso</td><td style="word-break:break-all;font-size:12px">${esc(n.chave||'—')}</td></tr>
-    </tbody></table>`;
+    const rows=[['Emitente', emit]];
+    if(n.destinatario_nome) rows.push(['Destinatário', esc(n.destinatario_nome)+(n.destinatario_doc?(' · '+esc(n.destinatario_doc)):'')+(n.destinatario_uf?(' · '+esc(n.destinatario_uf)):'')]);
+    if(n.natureza) rows.push(['Natureza da operação', esc(n.natureza)]);
+    if(n.cfops) rows.push(['CFOP', esc(n.cfops)]);
+    rows.push(['Operação', esc(n.operacao||'—')+(n.situacao?(' · '+esc(n.situacao)):'')]);
+    if(n.numero) rows.push(['Nº / série', esc(n.numero)+(n.serie?(' / '+esc(n.serie)):'')]);
+    rows.push(['Chave de acesso', `<span style="word-break:break-all;font-size:12px">${esc(n.chave||'—')}</span>`]);
+    box.innerHTML=`<table><tbody>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</tbody></table>`;
   }).catch(()=>{ const box=document.getElementById('fin-nota'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar a nota.</div>'; });
   carregarItens(t.nota_chave).then(items=>{
     const box=document.getElementById('fin-itens');
@@ -685,7 +701,7 @@ async function salvarLancamento(tituloId){
   } else { plano=parsePlano(val('lc_plano')); }
   const pago=document.getElementById('lc_pago')&&document.getElementById('lc_pago').checked;
   const doc={ origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:t.data_emissao?String(t.data_emissao).slice(0,10):null,
-    vencimento:val('lc_venc')||null, forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
+    vencimento:val('lc_venc')||null, parcelas:(finParcelas[t.nota_chave]||[]), forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
     pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
   const ex=lancDeTitulo(t.id);
   try{
