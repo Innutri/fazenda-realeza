@@ -514,7 +514,7 @@ function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
 // ===================== FINANCEIRO — contas a pagar/receber =====================
-let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={}, finXmlCache={}, finParcelas={};
+let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={}, finXmlCache={}, finPagto={};
 function titulosFiscais(){ return (L.titulos||[]); }
 function lancamentos(){ return (L.gestao_lancamentos||[]); }
 function avulsos(){ return lancamentos().filter(l=>l.origem==='avulso'); }
@@ -552,7 +552,11 @@ async function parseXMLDados(path){
   const items=Array.from(docx.getElementsByTagName("det")).map((d,i)=>{ const prod=d.getElementsByTagName("prod")[0]; if(!prod) return null;
     return { item:d.getAttribute("nItem")||String(i+1), codigo:get(prod,"cProd"), descricao:get(prod,"xProd"), ncm:get(prod,"NCM"), cfop:get(prod,"CFOP"), unidade:get(prod,"uCom"), quantidade:get(prod,"qCom"), valor_unit:parseFloat(get(prod,"vUnCom")||"0")||0, valor_total:parseFloat(get(prod,"vProd")||"0")||0 }; }).filter(Boolean);
   const parcelas=Array.from(docx.getElementsByTagName("dup")).map(d=>({ n:get(d,"nDup"), venc:get(d,"dVenc"), valor:parseFloat(get(d,"vDup")||"0")||0 })).filter(p=>p.venc||p.valor);
-  const res={items,parcelas}; finXmlCache[path]=res; return res;
+  const dp=docx.getElementsByTagName("detPag")[0];
+  const tPag=dp?get(dp,"tPag"):"";
+  const mapForma={'01':'Dinheiro','02':'Cheque','03':'Cartão','04':'Cartão','05':'Cartão','10':'Cartão','11':'Cartão','15':'Boleto','17':'PIX','18':'Transferência','19':'Transferência'};
+  const forma=mapForma[tPag]||null;
+  const res={items,parcelas,forma}; finXmlCache[path]=res; return res;
 }
 async function carregarItens(chave){
   if(!chave) return [];
@@ -564,12 +568,12 @@ async function carregarItens(chave){
   }
   finItensCache[chave]=items; return items;
 }
-async function carregarParcelas(chave){
-  if(finParcelas[chave]) return finParcelas[chave];
-  let ps=[];
+async function carregarPagamento(chave){
+  if(finPagto[chave]) return finPagto[chave];
+  let res={parcelas:[],forma:null};
   const n=await carregarNota(chave);
-  if(n && n.xml_storage_path && n.xml_completo){ try{ ps=(await parseXMLDados(n.xml_storage_path)).parcelas; }catch(e){ ps=[]; } }
-  finParcelas[chave]=ps; return ps;
+  if(n && n.xml_storage_path && n.xml_completo){ try{ const x=await parseXMLDados(n.xml_storage_path); res={parcelas:x.parcelas||[], forma:x.forma||null}; }catch(e){} }
+  finPagto[chave]=res; return res;
 }
 function planoOptions(){
   const seen=new Set(); let out='';
@@ -659,9 +663,15 @@ function renderTituloDetalhe(c){
    </div>
    <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
   toggleRateio();
-  carregarParcelas(t.nota_chave).then(ps=>{
+  carregarPagamento(t.nota_chave).then(pg=>{
+    const ps=pg.parcelas||[];
     const vinp=document.getElementById('lc_venc');
-    if(ps.length && vinp && !vinp.value && ps[0].venc) vinp.value=ps[0].venc;
+    if(vinp && !vinp.value){
+      if(ps.length && ps[0].venc) vinp.value=ps[0].venc;
+      else if(t.data_emissao) vinp.value=String(t.data_emissao).slice(0,10);
+    }
+    const finp=document.getElementById('lc_forma');
+    if(finp && !finp.value && pg.forma) finp.value=pg.forma;
     const box=document.getElementById('fin-parcelas');
     if(box && ps.length>1){
       box.innerHTML=`<div class="muted" style="margin:4px 0 6px">Nota parcelada — ${ps.length} parcela(s), vindas da nota:</div><div style="overflow-x:auto"><table><thead><tr><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${ps.map(p=>`<tr><td>${esc(p.n||'')}</td><td>${p.venc?fmtDate(p.venc):'—'}</td><td class="num money">${fmtBRL(p.valor)}</td></tr>`).join('')}</tbody></table></div>`;
@@ -687,7 +697,7 @@ async function salvarLancamento(tituloId){
   } else { plano=parsePlano(val('lc_plano')); }
   const pago=document.getElementById('lc_pago')&&document.getElementById('lc_pago').checked;
   const doc={ origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:t.data_emissao?String(t.data_emissao).slice(0,10):null,
-    vencimento:val('lc_venc')||null, parcelas:(finParcelas[t.nota_chave]||[]), forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
+    vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
     pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
   const ex=lancDeTitulo(t.id);
   try{
