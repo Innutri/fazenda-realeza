@@ -1469,34 +1469,41 @@ async function telaCompraAnimal(){
       </div>
       <div class="field" style="margin-top:8px"><label>Classificação genética</label><select id="cmp_class">${optClass("")}</select></div>
     </div>
-    <div class="actions"><button class="btn" onclick="salvarCompraAnimal()">Salvar e próximo →</button></div>
+    <div class="actions"><button class="btn" id="btn-cmp-salvar" onclick="salvarCompraAnimal()">Salvar e próximo →</button></div>
     ${st.feitos.length?`<div class="divider"></div><p class="muted">Já cadastrados: ${st.feitos.map(f=>`nº ${f.numero}${f.peso!=null?" ("+f.peso+"kg)":""}`).join(" · ")}</p>`:""}
   </div>`;
   const i=document.getElementById("cmp_num"); if(i){ i.focus(); i.select(); }
 }
+let salvandoCompra=false;
 async function salvarCompraAnimal(){
+  if(salvandoCompra) return;            // trava contra toque duplo / clique repetido
   const v=id=>document.getElementById(id);
   const numero=parseInt(v("cmp_num").value);
   const tipo=v("cmp_tipo").value;
   const peso=v("cmp_peso").value?parseFloat(v("cmp_peso").value):null;
   if(!numero||numero<1) return toast("Informe o número do animal.","err");
   if(LOCAL.animais.some(a=>!a.arquivado&&a.numero===numero)) return toast(`Número ${numero} já está em uso.`,"err");
-  const hoje=new Date().toISOString().slice(0,10);
-  const rec={ numero, tipo, origem:"compra", data_compra:hoje, arquivado:false, status:"ativo" };
-  const mEl=v("cmp_meses"); const meses=(mEl&&mEl.value)?parseInt(mEl.value):null;
-  if(meses!=null && !isNaN(meses)) rec.data_nascimento=dataNascDeMeses(meses);
-  const rEl=v("cmp_raca"); if(rEl&&rEl.value) rec.raca=rEl.value;
-  const cEl=v("cmp_class"); if(cEl&&cEl.value) rec.classificacao_genetica=cEl.value;
-  const { data:novo, error } = await sb.from("animais").insert(rec);
-  if(error) return toast("Erro ao cadastrar: "+msgErro(error),"err");
-  const animalId=novo[0].id;
-  if(peso!=null){
-    const { error:e2 } = await sb.from("operacoes_rebanho").insert({ animal_id:animalId, data:hoje, peso });
-    if(e2) toast("Animal salvo, mas o peso não gravou: "+msgErro(e2),"err");
-  }
-  compraState.feitos.push({ numero, tipo, peso, id:animalId });
-  toast(`Animal nº ${numero} cadastrado.`,"ok");
-  telaCompraAnimal();
+  salvandoCompra=true;
+  const btn=v("btn-cmp-salvar"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
+  const reativa=()=>{ if(btn){ btn.disabled=false; btn.textContent="Salvar e próximo →"; } };
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const rec={ numero, tipo, origem:"compra", data_compra:hoje, arquivado:false, status:"ativo" };
+    const mEl=v("cmp_meses"); const meses=(mEl&&mEl.value)?parseInt(mEl.value):null;
+    if(meses!=null && !isNaN(meses)) rec.data_nascimento=dataNascDeMeses(meses);
+    const rEl=v("cmp_raca"); if(rEl&&rEl.value) rec.raca=rEl.value;
+    const cEl=v("cmp_class"); if(cEl&&cEl.value) rec.classificacao_genetica=cEl.value;
+    const { data:novo, error } = await sb.from("animais").insert(rec);
+    if(error){ reativa(); return toast("Erro ao cadastrar: "+msgErro(error),"err"); }
+    const animalId=novo[0].id;
+    if(peso!=null){
+      const { error:e2 } = await sb.from("operacoes_rebanho").insert({ animal_id:animalId, data:hoje, peso });
+      if(e2) toast("Animal salvo, mas o peso não gravou: "+msgErro(e2),"err");
+    }
+    compraState.feitos.push({ numero, tipo, peso, id:animalId });
+    toast(`Animal nº ${numero} cadastrado.`,"ok");
+    telaCompraAnimal();
+  } finally { salvandoCompra=false; }
 }
 function textoRelatorioCompra(st){
   const cp=st.feitos.filter(f=>f.peso!=null);
