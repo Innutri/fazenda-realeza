@@ -122,6 +122,38 @@
   .loginerr{background:#fdeaea;color:#b23b3b;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px;display:none}
   .userchip{display:flex;align-items:center;gap:8px;font-size:12px;color:#dfe9e2}
   .userchip b{color:#fff}
+  /* --- relatório de rebanho (portado do app de campo) --- */
+  .kpi .n{font-size:30px;font-weight:800;color:var(--verde)}
+  .kpi.gold .n{color:var(--ouro)}
+  .tag.femea{background:#fce7f0;color:#a83267}
+  .tag.macho{background:#e3eefc;color:#2c5aa8}
+  .tag.touro{background:#f3ead2;color:#7d6320}
+  .tag.prenhe{background:#e1f4e6;color:#1f7a45}
+  .tag.vazia{background:#fdeaea;color:#b23b3b}
+  .relnav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  .relnav a{text-decoration:none;background:var(--ouro);border:1px solid #b28f35;color:#2e2508;font-size:12px;font-weight:700;padding:7px 12px;border-radius:20px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .relnav a:active,.relnav a:hover{background:var(--verde2);border-color:var(--verde2);color:#fff}
+  .card[id]{scroll-margin-top:14px}
+  .bar{height:22px;background:#eef1ec;border-radius:12px;overflow:hidden;display:flex;margin-top:6px}
+  .bar .seg{height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700}
+  .seg.pr{background:var(--ok)} .seg.vz{background:var(--erro)} .seg.pc{background:var(--ouro)}
+  .numchips{display:flex;flex-wrap:wrap;gap:8px}
+  .numchip{background:#eef5f0;border:1px solid #cfe3d7;color:var(--verde);padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px}
+  table.rt th,table.rt td{text-align:left}
+  details.exp{margin:14px 0 0}
+  details.exp>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2);font-weight:700;padding:8px 12px;background:#eef5f0;border:1px solid var(--linha);border-radius:8px}
+  details.exp>summary::-webkit-details-marker{display:none}
+  details.exp>summary::before{content:"▸";font-size:11px}
+  details.exp[open]>summary::before{content:"▾"}
+  details.exp>.exp-body{margin-top:8px}
+  @media(max-width:640px){
+    table.rt thead{display:none}
+    table.rt, table.rt tbody, table.rt tr, table.rt td{display:block;width:100%}
+    table.rt tr{border:1px solid var(--linha);border-radius:10px;margin-bottom:10px;padding:8px 12px;background:#fff}
+    table.rt td{border:none;padding:5px 0;display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:13.5px}
+    table.rt td::before{content:attr(data-label);color:var(--txt2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+    table.rt td[data-label=""]::before,table.rt td:not([data-label])::before{content:""}
+  }
 </style>
 </head>
 <body>
@@ -244,13 +276,20 @@ async function lerPlanos(){
   try{ return await req(`/rest/v1/fiscal_plano_contas?select=codigo,reduzido,descricao,tipo&order=codigo&limit=3000`); }
   catch(e){ return []; }
 }
+let PRODUTOR_ID=null;
 async function lerProdutorId(){
-  try{ const r=await req(`/rest/v1/gestao_app_produtores?app_slug=eq.${APP_SLUG}&select=produtor_id`, true); return (r&&r[0])?r[0].produtor_id:null; }catch(e){ return null; }
+  if(PRODUTOR_ID) return PRODUTOR_ID;
+  try{ const r=await req(`/rest/v1/gestao_app_produtores?app_slug=eq.${APP_SLUG}&select=produtor_id`, true); PRODUTOR_ID=(r&&r[0])?r[0].produtor_id:null; return PRODUTOR_ID; }catch(e){ return null; }
 }
 async function lerPropriedades(){
   try{ const pid=await lerProdutorId();
     const url = pid? `/rest/v1/fiscal_propriedades?produtor_id=eq.${pid}&select=id,nome,municipio,uf&order=nome` : `/rest/v1/fiscal_propriedades?select=id,nome,municipio,uf&order=nome`;
     return await req(url); }catch(e){ return []; }
+}
+async function lerContas(){
+  try{ const pid=await lerProdutorId();
+    const url = pid? `/rest/v1/fiscal_contas_bancarias?produtor_id=eq.${pid}&select=id,banco,agencia,conta,tipo,titular,pix&order=banco` : `/rest/v1/fiscal_contas_bancarias?select=id,banco,agencia,conta,tipo,titular,pix&order=banco`;
+    return await req(url, true); }catch(e){ return []; }
 }
 
 function mostrarLogin(msg){
@@ -308,6 +347,31 @@ function intervaloVazias6m(ciclos){
   }
   return {ok:false};
 }
+// ---- relatório de rebanho: views computadas no cliente (igual ao app de campo) ----
+function contaNoRebanho(a){ return !a.arquivado && !(a.tipo==="touro" && a.procedencia==="central"); }
+function faixaDe(m){ if(m==null) return "sem_data"; if(m<=12) return "0-12"; if(m<=24) return "13-24"; return "25+"; }
+function femeaRepro(f){
+  const ciclos=(L.reproducao||[]).filter(r=>r.animal_id===f.id).sort((a,b)=>b.ciclo-a.ciclo);
+  const ultimo=ciclos[0]||null; let situacao="sem_registro";
+  if(ultimo){ if(ultimo.fase==="prenhe") situacao="prenhe"; else if(ultimo.fase==="vazia") situacao="vazia"; else if(ultimo.fase==="parida") situacao="parida"; else situacao="em_processo"; }
+  return { animal_id:f.id, numero:f.numero, total_ciclos:ciclos.length, ciclos_confirmados:ciclos.filter(r=>r.resultado_prenhez!=null).length, situacao, ultimo_resultado: ultimo?(ultimo.resultado_prenhez??null):null, ultima_fase: ultimo?ultimo.fase:null };
+}
+function relViewRows(name){
+  const ativos=(L.animais||[]).filter(contaNoRebanho);
+  if(name==="vw_contagem_tipo"){ const g={}; ativos.forEach(a=>g[a.tipo]=(g[a.tipo]||0)+1); return Object.keys(g).map(t=>({tipo:t,total:g[t]})); }
+  if(name==="vw_faixa_etaria"){ const g={}; ativos.forEach(a=>{const k=a.tipo+"|"+faixaDe(idadeMeses(a.data_nascimento)); g[k]=(g[k]||0)+1;}); return Object.keys(g).map(k=>({tipo:k.split("|")[0],faixa:k.split("|")[1],total:g[k]})); }
+  if(name==="vw_resumo_reproducao"){ const fs=ativos.filter(a=>a.tipo==="femea").map(femeaRepro);
+    return { total_femeas:fs.length, prenhes:fs.filter(f=>f.situacao==="prenhe").length, vazias:fs.filter(f=>f.situacao==="vazia").length, paridas:fs.filter(f=>f.situacao==="parida").length, em_processo:fs.filter(f=>f.situacao==="em_processo").length, sem_registro:fs.filter(f=>f.situacao==="sem_registro").length, com_2_ou_mais_ciclos:fs.filter(f=>f.total_ciclos>=2).length }; }
+  return [];
+}
+function vaziasJanela6m(animalId){
+  const vz=(L.reproducao||[]).filter(r=>r.animal_id===animalId && r.resultado_prenhez===false)
+    .map(r=>r.data_diagnostico||r.data_cobertura||((r.created_at||"").slice(0,10))).filter(Boolean).sort();
+  for(let i=0;i<vz.length;i++){ let n=1, ate=vz[i];
+    for(let j=i+1;j<vz.length;j++){ const meses=(new Date(vz[j])-new Date(vz[i]))/(1000*60*60*24*30.44); if(meses<=6){ n++; ate=vz[j]; } else break; }
+    if(n>=3) return {alerta:true, n, de:vz[i], ate}; }
+  return {alerta:false, n:0};
+}
 
 // ---- seções ----
 const SECOES=[
@@ -333,6 +397,7 @@ async function carregar(){
     L.titulos=await lerTitulos();
     L.planos=await lerPlanos();
     L.propriedades=await lerPropriedades();
+    L.contas=await lerContas();
     est.style.display="none"; shell.style.display="flex";
     document.getElementById("topright").innerHTML=`
       <span class="userchip">👤 <b>${esc(SESSION.email)}</b></span>
@@ -452,15 +517,27 @@ function renderRebanho(c){
 }
 
 // ===================== RELATÓRIOS (vivo) =====================
+let relSub='rebanho';
+function relTab(t){ relSub=t; render(); }
 function renderRelatorios(c){
+  c.innerHTML=`
+  <div class="pgtitle">📈 Relatórios</div>
+  <div class="pgsub">O mesmo relatório de rebanho do app de campo, ao vivo — mais exportações. (Somente leitura.)</div>
+  <div class="finabas">
+    <button class="${relSub==='rebanho'?'on':''}" onclick="relTab('rebanho')">🐄 Relatório de rebanho</button>
+    <button class="${relSub==='export'?'on':''}" onclick="relTab('export')">📤 Exportações & idades</button>
+  </div>
+  <div id="rel-body"><div class="card"><div class="empty">Carregando…</div></div></div>`;
+  if(relSub==='export') renderRelExport(); else renderRelatorioRebanho();
+}
+function renderRelExport(){
+  const body=document.getElementById('rel-body'); if(!body) return;
   const A=L.animais.filter(a=>!a.arquivado);
   const faixa={femea:{"0-12":0,"13-24":0,"25+":0,"sd":0},macho:{"0-12":0,"13-24":0,"25+":0,"sd":0},touro:{"0-12":0,"13-24":0,"25+":0,"sd":0}};
   A.forEach(a=>{ const t=a.tipo; if(!faixa[t]) return; const m=idadeMeses(a.data_nascimento);
     const k=m==null?"sd":m<=12?"0-12":m<=24?"13-24":"25+"; faixa[t][k]++; });
   const linha=t=>`<tr><td><b>${t}</b></td><td class="num">${faixa[t]["0-12"]}</td><td class="num">${faixa[t]["13-24"]}</td><td class="num">${faixa[t]["25+"]}</td><td class="num">${faixa[t]["sd"]}</td></tr>`;
-  c.innerHTML=`
-  <div class="pgtitle">📈 Relatórios</div>
-  <div class="pgsub">Análises e exportações a partir dos dados do rebanho. (Somente leitura.)</div>
+  body.innerHTML=`
   <div class="card">
     <h3>Exportar para Excel</h3>
     <div class="sub">Baixa em CSV (abre direto no Excel), sempre a foto mais recente do banco.</div>
@@ -476,11 +553,316 @@ function renderRelatorios(c){
     <div class="sub">Distribuição por idade (meses), por tipo de animal.</div>
     <table><thead><tr><th>Tipo</th><th>0–12m</th><th>13–24m</th><th>25m+</th><th>Sem data</th></tr></thead>
     <tbody>${linha("femea")}${linha("macho")}${linha("touro")}</tbody></table>
-  </div>
-  <div class="card">
-    <h3>Mais relatórios</h3>
-    <p class="muted">Os relatórios reprodutivos completos (prenhez por método, por ciclo, concepção por touro) estão na aba <b>Relatórios</b> do app de campo. Posso trazer os que você mais usa pra cá, em formato de mesa grande — é só pedir.</p>
   </div>`;
+}
+function renderRelatorioRebanho(){
+  const body=document.getElementById('rel-body'); if(!body) return;
+  const cont={femea:0,macho:0,touro:0};
+  relViewRows('vw_contagem_tipo').forEach(r=>cont[r.tipo]=r.total);
+  const total=cont.femea+cont.macho+cont.touro;
+  const centrais = L.animais.filter(a=>!a.arquivado && a.tipo==="touro" && a.procedencia==="central").length;
+
+  // categorias por idade
+  const cat={bezerra:0,novilha:0,vaca:0,bezerro:0,garrote:0,boi:0};
+  L.animais.filter(a=>!a.arquivado).forEach(a=>{ const c=categoriaAnimal(a); if(cat[c]!==undefined) cat[c]++; });
+
+  // faixas
+  const faixas={}; ["femea","macho","touro"].forEach(t=>faixas[t]={"0-12":0,"13-24":0,"25+":0,"sem_data":0});
+  relViewRows('vw_faixa_etaria').forEach(r=>{ if(faixas[r.tipo]) faixas[r.tipo][r.faixa]=r.total; });
+  const linhaFx=t=>`<tr><td data-label="Tipo"><span class="tag ${t}">${t}</span></td><td data-label="0–12 meses">${faixas[t]["0-12"]}</td><td data-label="13–24 meses">${faixas[t]["13-24"]}</td><td data-label="25+ meses">${faixas[t]["25+"]}</td><td data-label="Sem data">${faixas[t]["sem_data"]}</td><td data-label="Total"><b>${cont[t]}</b></td></tr>`;
+
+  const rp=relViewRows('vw_resumo_reproducao');
+  const basePr=rp.prenhes+rp.vazias;
+  const pctPr=basePr?Math.round(rp.prenhes/basePr*100):0;
+  const pctVz=basePr?100-pctPr:0;
+  const pctProc = rp.total_femeas? Math.round(rp.em_processo/rp.total_femeas*100):0;
+
+  // Estatística reprodutiva sobre fêmeas aptas (12 meses ou mais)
+  const femeasAtivas = L.animais.filter(a=>!a.arquivado && a.tipo==="femea");
+  const totalFemeasReb = femeasAtivas.length;
+  const statusReprodF = (f)=>{ const cs=L.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="parida") return "parida"; return "sem"; };
+  const temRepro=(fid)=>L.reproducao.some(r=>r.animal_id===fid);
+  const f12 = femeasAtivas.filter(a=>{ const m=idadeMeses(a.data_nascimento); return (m!=null && m>=12) || temRepro(a.id); });
+  const semData12 = femeasAtivas.filter(a=>idadeMeses(a.data_nascimento)==null && !temRepro(a.id)).length;
+  const n12=f12.length;
+  const s12={prenhe:0,vazia:0,aguardando:0,parida:0,sem:0};
+  f12.forEach(f=>{ s12[statusReprodF(f)]++; });
+  const naoP12 = n12 - s12.prenhe;
+  const p12=(x)=> n12? Math.round(x/n12*100):0;
+  const pctPren12 = p12(s12.prenhe);
+
+  // ---- Etapa 1: índices reprodutivos práticos ----
+  const ultimoRepro=(fid)=>{ const cs=L.reproducao.filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+  // 1) Taxa de prenhez sobre expostas
+  const expostas=(rp.prenhes||0)+(rp.vazias||0)+(rp.em_processo||0);
+  const taxaPrenhez=expostas?Math.round(rp.prenhes/expostas*100):0;
+  // prenhas atuais (com o registro de prenhez)
+  const prenhasRecs=[];
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)) prenhasRecs.push({f,r:u}); });
+  const totPrenhas=prenhasRecs.length;
+  // 2) por método
+  let mIatf=0,mTouro=0; prenhasRecs.forEach(x=>{ if(x.r.tipo==="iatf") mIatf++; else mTouro++; });
+  const pIatf=totPrenhas?Math.round(mIatf/totPrenhas*100):0; const pTouro=totPrenhas?100-pIatf:0;
+  // monta natural detalhada por equipe de touro
+  const porEquipe={}; prenhasRecs.forEach(x=>{ if(x.r.tipo==="touro"){ const nome=x.r.equipe_nome||"Sem equipe"; porEquipe[nome]=(porEquipe[nome]||0)+1; } });
+  const equipeRows=Object.entries(porEquipe).sort((a,b)=>b[1]-a[1]);
+  // IATF detalhada por touro (sêmen)
+  const porTouroIatf={}; prenhasRecs.forEach(x=>{ if(x.r.tipo==="iatf"){ const nome=x.r.touro_nome||"Sem touro"; porTouroIatf[nome]=(porTouroIatf[nome]||0)+1; } });
+  const touroRows=Object.entries(porTouroIatf).sort((a,b)=>b[1]-a[1]);
+  // 3) por categoria
+  const catRep={bezerra:{exp:0,pren:0},novilha:{exp:0,pren:0},vaca:{exp:0,pren:0}};
+  femeasAtivas.forEach(f=>{ const c=categoriaAnimal(f); if(!catRep[c]) return; const u=ultimoRepro(f.id); if(u){ catRep[c].exp++; if(u.fase==="prenhe"||u.resultado_prenhez===true) catRep[c].pren++; } });
+  // 4) distribuição na estação (data da monta; diagnóstico quando ausente)
+  const tercos=[0,0,0]; let semDataMonta=0, estIni=null, estFim=null;
+  // só usa data REAL de cobertura/monta (não o diagnóstico) — evita "estação" falsa
+  const refs=prenhasRecs.map(x=>{ const d=x.r.data_cobertura; return d?new Date(d).getTime():null; });
+  const refsOk=refs.filter(t=>t!=null); semDataMonta=refs.filter(t=>t==null).length;
+  const datasDistintas=new Set(refsOk).size;
+  let estacaoValida=false;
+  if(refsOk.length){ const min=Math.min(...refsOk), max=Math.max(...refsOk); estIni=min; estFim=max; const span=max-min;
+    // só há "estação" para dividir se houver dispersão real de datas (>= 2 datas e span >= 14 dias)
+    estacaoValida = datasDistintas>=2 && span>=14*86400000;
+    if(estacaoValida) refsOk.forEach(t=>{ let idx=Math.min(2,Math.floor((t-min)/span*3)); tercos[idx]++; }); }
+  // composição real do plantel prenhe por método
+  const compIatf=mIatf, compMonta=mTouro;
+  // distribuição da prenhez por CICLO (ordem do serviço: 1º = 1ª IA/monta, 2º = repasse, ...)
+  const ciclos=[0,0,0]; const ciclosNums=[[],[],[]];
+  prenhasRecs.forEach(x=>{ let c=parseInt(x.r.ciclo); if(!c||c<1) c=1; const idx=Math.min(2,c-1); ciclos[idx]++; if(x.f.numero!=null) ciclosNums[idx].push(x.f.numero); });
+  ciclosNums.forEach(a=>a.sort((p,q)=>p-q));
+  const totCiclos=ciclos[0]+ciclos[1]+ciclos[2];
+  const pcc=(x)=> totCiclos?Math.round(x/totCiclos*100):0;
+  const cicloLbl=["1º ciclo","2º ciclo","3º ciclo ou +"];
+  const totTercos=tercos[0]+tercos[1]+tercos[2]; const pt=(x)=> totTercos?Math.round(x/totTercos*100):0;
+  const dISO=(ms)=> new Date(ms).toISOString().slice(0,10);
+  // 5) lista de descarte consolidada — regra: 3 ou mais vazias em até 6 meses
+  const descarte=[];
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); const jv=vaziasJanela6m(f.id);
+    if(jv.alerta) descarte.push({f, motivo:`Vazia ${jv.n}× (≤6 meses)`, cat:categoriaAnimal(f), idade:idadeTxt(f.data_nascimento), data: u?(u.data_diagnostico||u.data_cobertura):null}); });
+  descarte.sort((a,b)=>(a.f.numero||0)-(b.f.numero||0));
+
+  // Previsão de partos
+  const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  const mesNome=mk=>{ const p=mk.split('-'); return MESES[parseInt(p[1],10)-1]+'/'+p[0]; };
+  const hojeMs=Date.now();
+  const partos=[]; let semPrev=0;
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && u.fase==="prenhe"){
+    const dp=calcPrevisaoParto(u);
+    if(dp) partos.push({f, dp, cob:coberturaTxt(u), tipo:u.tipo}); else semPrev++;
+  }});
+  partos.sort((a,b)=> a.dp<b.dp?-1:a.dp>b.dp?1:0);
+  const porMesParto={}; partos.forEach(p=>{ const mk=p.dp.slice(0,7); if(!porMesParto[mk]) porMesParto[mk]={iatf:0,monta:0,total:0}; if(p.tipo==="iatf") porMesParto[mk].iatf++; else porMesParto[mk].monta++; porMesParto[mk].total++; });
+  const mesesParto=Object.entries(porMesParto).sort((a,b)=>a[0]<b[0]?-1:1);
+  const totIatfParto=partos.filter(p=>p.tipo==="iatf").length, totMontaParto=partos.length-totIatfParto;
+  const prox60=partos.filter(p=>{ const dias=(new Date(p.dp)-hojeMs)/86400000; return dias>=0 && dias<=60; }).length;
+  const faltamTxt=(dp)=>{ const dias=Math.round((new Date(dp)-hojeMs)/86400000); return dias>=0?("faltam "+dias+" dias"):("atrasado "+(-dias)+" dias"); };
+
+  // Taxa de concepção por touro/sêmen e por data de diagnóstico
+  const touroLabel = r => r.tipo==="iatf" ? (r.touro_nome||"IATF (sem sêmen)") : (r.equipe_nome? ("Equipe "+r.equipe_nome) : (r.touro_nome||"Touro"));
+  const metodoLabel = t => t==="iatf"?"IATF":"Monta natural";
+  const diagRecs = (L.reproducao||[]).filter(r=>r.resultado_prenhez!==null);
+  const concTouro={};
+  diagRecs.forEach(r=>{ const k=touroLabel(r); if(!concTouro[k]) concTouro[k]={nome:k, metodo:r.tipo, pren:0, vaz:0}; if(r.resultado_prenhez) concTouro[k].pren++; else concTouro[k].vaz++; });
+  const concTouroRows=Object.values(concTouro).map(d=>({...d, tot:d.pren+d.vaz})).sort((a,b)=>b.tot-a.tot);
+  const concDT={};
+  diagRecs.forEach(r=>{ const dt=r.data_diagnostico||"—"; const k=dt+"|"+touroLabel(r)+"|"+r.tipo; if(!concDT[k]) concDT[k]={data:dt, nome:touroLabel(r), metodo:r.tipo, pren:0, vaz:0}; if(r.resultado_prenhez) concDT[k].pren++; else concDT[k].vaz++; });
+  const concDTRows=Object.values(concDT).map(d=>({...d, tot:d.pren+d.vaz})).sort((a,b)=> a.data<b.data?1:a.data>b.data?-1:0);
+
+  body.innerHTML=`
+    <div class="relnav">
+      <a href="#rel-rebanho">🐄 Rebanho</a>
+      <a href="#rel-categorias">Categorias</a>
+      <a href="#rel-faixa">Idades</a>
+      <a href="#rel-repro">Reprodução</a>
+      <a href="#rel-taxa">Prenhez</a>
+      <a href="#rel-metodo">IATF × Monta</a>
+      <a href="#rel-ciclo">Ciclos</a>
+      <a href="#rel-conc">Touros</a>
+      <a href="#rel-partos">Partos</a>
+      <a href="#rel-descarte">Descarte</a>
+    </div>
+    <div class="card" id="rel-rebanho">
+      <h3>Rebanho — visão geral</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${total}</div><div class="l">Total ativos</div></div>
+        <div class="kpi"><div class="n">${cont.femea}</div><div class="l">Fêmeas</div></div>
+        <div class="kpi"><div class="n">${cont.macho}</div><div class="l">Machos</div></div>
+        <div class="kpi gold"><div class="n">${cont.touro}</div><div class="l">Touros (fazenda)</div></div>
+      </div>
+      ${centrais?`<p class="muted" style="margin-top:12px">🧬 ${centrais} touro(s) de central (sêmen) cadastrado(s) — usados na reprodução (IATF), mas <b>não contam</b> no rebanho físico.</p>`:""}
+    </div>
+
+    <div class="card" id="rel-categorias">
+      <h3>Categorias do rebanho (por idade)</h3>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${cat.bezerra}</div><div class="l">Bezerras</div></div>
+        <div class="kpi"><div class="n">${cat.novilha}</div><div class="l">Novilhas</div></div>
+        <div class="kpi"><div class="n">${cat.vaca}</div><div class="l">Vacas</div></div>
+      </div>
+      <div class="kpis" style="margin-top:10px">
+        <div class="kpi"><div class="n">${cat.bezerro}</div><div class="l">Bezerros</div></div>
+        <div class="kpi"><div class="n">${cat.garrote}</div><div class="l">Garrotes</div></div>
+        <div class="kpi"><div class="n">${cat.boi}</div><div class="l">Bois</div></div>
+      </div>
+      <p class="muted" style="margin-top:14px">
+        <b>Como a categoria é definida (pela idade):</b><br>
+        • Fêmeas — até 12 meses: <b>bezerra</b> · 13 a 24 meses: <b>novilha</b> · 25 meses ou mais: <b>vaca</b>.<br>
+        • Machos — até 12 meses: <b>bezerro</b> · 13 a 20 meses: <b>garrote</b> · 21 meses ou mais: <b>boi</b>.<br>
+        • Touros não entram nesta classificação.
+      </p>
+    </div>
+
+    <div class="card" id="rel-faixa">
+      <h3>Faixa etária (distribuição por idade)</h3>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Tipo</th><th>0–12 meses</th><th>13–24 meses</th><th>25+ meses</th><th>Sem data</th><th>Total</th></tr></thead>
+      <tbody>${linhaFx("femea")}${linhaFx("macho")}${linhaFx("touro")}</tbody></table></div>
+    </div>
+
+    <div class="card" id="rel-repro">
+      <h3>Estatística reprodutiva — fêmeas aptas (12 meses ou mais)</h3>
+      <p class="muted">Base: fêmeas <b>ativas com 12 meses ou mais</b>, ou que <b>já estão em reprodução</b> (aceita animais mais novos por causa do cadastro inicial).${semData12?` <span style="color:var(--erro)">${semData12} sem data de nascimento e sem registro ficaram de fora.</span>`:""}</p>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n">${n12}</div><div class="l">Fêmeas aptas</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ok)">${s12.prenhe}</div><div class="l">Prenhas (${pctPren12}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${naoP12}</div><div class="l">Não prenhas (${p12(naoP12)}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${s12.vazia}</div><div class="l">Vazias (${p12(s12.vazia)}%)</div></div>
+      </div>
+      <div class="muted" style="margin-top:12px">Prenhas × não prenhas (sobre ${n12} fêmeas aptas)</div>
+      <div class="bar">
+        ${n12&&pctPren12?`<div class="seg pr" style="width:${pctPren12}%">${pctPren12}%</div>`:""}
+        ${n12&&naoP12?`<div class="seg vz" style="width:${100-pctPren12}%">${100-pctPren12}%</div>`:""}
+        ${!n12?`<div class="seg" style="width:100%;background:#ccc;color:#555">nenhuma fêmea apta</div>`:""}
+      </div>
+      <div class="muted" style="margin-top:10px;font-size:12px">Não prenhas = vazias (${s12.vazia}) + em processo/implante (${s12.aguardando}) + paridas (${s12.parida}) + sem registro (${s12.sem}).</div>
+      <div class="kpis" style="margin-top:16px">
+        <div class="kpi gold"><div class="n">${totalFemeasReb}</div><div class="l">Total do rebanho de fêmeas (todas as idades)</div></div>
+      </div>
+    </div>
+
+    <div class="card" id="rel-taxa">
+      <h3>Taxa de prenhez (sobre fêmeas expostas)</h3>
+      <p class="muted">Fêmeas <b>expostas</b> = as que entraram em reprodução (têm registro). As "sem registro" não entraram nesta estação e não contam na taxa.</p>
+      <div class="bar" style="margin:10px 0 14px">
+        ${expostas&&taxaPrenhez?`<div class="seg pr" style="width:${taxaPrenhez}%">${taxaPrenhez}% prenhas</div>`:""}
+        ${expostas&&(100-taxaPrenhez)?`<div class="seg vz" style="width:${100-taxaPrenhez}%">${100-taxaPrenhez}%</div>`:""}
+        ${!expostas?`<div class="seg" style="width:100%;background:#ccc;color:#555">nenhuma fêmea exposta</div>`:""}
+      </div>
+      <div class="kpis">
+        <div class="kpi gold"><div class="n">${taxaPrenhez}%</div><div class="l">Taxa de prenhez (${rp.prenhes} de ${expostas} expostas)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ok)">${rp.prenhes}</div><div class="l">Prenhas</div></div>
+        <div class="kpi"><div class="n" style="color:var(--erro)">${rp.vazias}</div><div class="l">Vazias</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${rp.em_processo}</div><div class="l">Em processo</div></div>
+      </div>
+      <p class="muted" style="margin-top:10px">${rp.sem_registro} fêmeas sem registro (não expostas nesta estação).</p>
+    </div>
+
+    <div class="card" id="rel-metodo">
+      <h3>Prenhez por método (IATF × monta natural)</h3>
+      ${totPrenhas?`
+      <div class="kpis">
+        <div class="kpi"><div class="n" style="color:var(--verde2)">${mIatf}</div><div class="l">IATF (${pIatf}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${mTouro}</div><div class="l">Monta natural / touro (${pTouro}%)</div></div>
+        <div class="kpi"><div class="n">${totPrenhas}</div><div class="l">Total de prenhas</div></div>
+      </div>
+      <div class="bar" style="margin-top:12px">
+        ${pIatf?`<div class="seg" style="width:${pIatf}%;background:var(--verde2)">${pIatf}%</div>`:""}
+        ${pTouro?`<div class="seg" style="width:${pTouro}%;background:var(--ouro);color:#3a2c00">${pTouro}%</div>`:""}
+      </div>
+      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">IATF — por touro (sêmen)</h4>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
+      <tbody>${touroRows.length? touroRows.map(([nome,q])=>`<tr><td data-label="Touro (sêmen)"><b>${esc(nome)}</b></td><td data-label="Prenhas"><b>${q}</b></td><td data-label="% do método">${mIatf?Math.round(q/mIatf*100):0}%</td><td data-label="% do total">${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por IATF ainda.</td></tr>`}</tbody></table></div>
+      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Monta natural — por equipe de touro</h4>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:40%"><col style="width:20%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>Touro / Equipe</th><th>Prenhas</th><th>% do método</th><th>% do total</th></tr></thead>
+      <tbody>${equipeRows.length? equipeRows.map(([nome,q])=>`<tr><td data-label="Equipe"><b>${nome==="Sem equipe"?"Sem equipe":("Equipe "+esc(nome))}</b></td><td data-label="Prenhas"><b>${q}</b></td><td data-label="% do método">${mTouro?Math.round(q/mTouro*100):0}%</td><td data-label="% do total">${totPrenhas?Math.round(q/totPrenhas*100):0}%</td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nenhuma prenhez por monta natural ainda.</td></tr>`}</tbody></table></div>
+      `:`<p class="muted">Nenhuma prenhez registrada ainda.</p>`}
+    </div>
+
+    <div class="card">
+      <h3>Prenhez por categoria (novilhas × vacas)</h3>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Categoria</th><th>Expostas</th><th>Prenhas</th><th>Taxa de prenhez</th></tr></thead>
+      <tbody>${['novilha','vaca','bezerra'].map(c=>{const d=catRep[c]; if(!d.exp&&!d.pren) return ""; const tx=d.exp?Math.round(d.pren/d.exp*100):0; return `<tr><td data-label="Categoria"><span class="tag femea">${c}</span></td><td data-label="Expostas">${d.exp}</td><td data-label="Prenhas">${d.pren}</td><td data-label="Taxa de prenhez"><b>${tx}%</b></td></tr>`;}).join("")||`<tr><td colspan="4" class="empty">Sem dados.</td></tr>`}</tbody></table></div>
+      <p class="muted" style="margin-top:8px">Novilhas de 1º serviço costumam ter taxa menor que vacas — acompanhar separado ajuda no manejo.</p>
+    </div>
+
+    <div class="card" id="rel-ciclo">
+      <h3>Prenhez por ciclo</h3>
+      <div class="kpis" style="margin-top:6px">
+        <div class="kpi"><div class="n" style="color:var(--ok)">${ciclos[0]}</div><div class="l">1º ciclo (${pcc(ciclos[0])}%)</div></div>
+        <div class="kpi"><div class="n">${ciclos[1]}</div><div class="l">2º ciclo (${pcc(ciclos[1])}%)</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${ciclos[2]}</div><div class="l">3º ciclo+ (${pcc(ciclos[2])}%)</div></div>
+      </div>
+      <p class="muted" style="margin-top:8px">Ciclo = ordem do serviço reprodutivo (1º = primeira IA/monta, 2º = repasse, e assim por diante). Quanto mais prenhez no 1º ciclo, melhor a eficiência.</p>
+      ${[0,1,2].map(i=> ciclos[i]? `
+      <details class="exp" ${ciclos[i]>20?"":"open"} style="margin-top:10px">
+        <summary>${cicloLbl[i]} — ${ciclos[i]} prenha(s)</summary>
+        <div class="exp-body"><div class="numchips">${ciclosNums[i].map(n=>`<span class="numchip">${n}</span>`).join("")||`<span class="muted">sem número cadastrado</span>`}</div></div>
+      </details>`:``).join("")}
+
+      <div style="margin-top:14px;border-top:1px solid var(--linha);padding-top:12px">
+        <div class="muted" style="font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-size:12px">Composição por método</div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" style="color:var(--verde2)">${compIatf}</div><div class="l">IATF — precoces de 1ª cria</div></div>
+          <div class="kpi"><div class="n">${compMonta}</div><div class="l">Monta natural</div></div>
+        </div>
+      </div>
+
+      ${estacaoValida?`
+      <div style="margin-top:14px;border-top:1px solid var(--linha);padding-top:12px">
+        <div class="muted" style="font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-size:12px">Distribuição na estação — ${fmtDate(dISO(estIni))} a ${fmtDate(dISO(estFim))}</div>
+        <div class="kpis">
+          <div class="kpi"><div class="n" style="color:var(--ok)">${tercos[0]}</div><div class="l">1º terço (${pt(tercos[0])}%)</div></div>
+          <div class="kpi"><div class="n">${tercos[1]}</div><div class="l">2º terço (${pt(tercos[1])}%)</div></div>
+          <div class="kpi"><div class="n" style="color:var(--txt2)">${tercos[2]}</div><div class="l">3º terço (${pt(tercos[2])}%)</div></div>
+        </div>
+        <p class="muted" style="margin-top:8px">Prenhez no 1º terço = bezerro mais velho e pesado ao desmame.${semDataMonta?` (${semDataMonta} prenha(s) sem data de monta não entraram.)`:""}</p>
+      </div>`:``}
+    </div>
+
+    <div class="card" id="rel-conc">
+      <h3>Taxa de concepção por touro / sêmen</h3>
+      <p class="muted">Sobre as fêmeas já diagnosticadas (prenhas + vazias) — prenhez × vazias por touro e por data.</p>
+      <div style="overflow-x:auto"><table class="rt" style="table-layout:fixed;width:100%"><colgroup><col style="width:34%"><col style="width:16%"><col style="width:12%"><col style="width:12%"><col style="width:13%"><col style="width:13%"></colgroup>
+      <thead><tr><th>Touro / Sêmen</th><th>Método</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
+      <tbody>${concTouroRows.length? concTouroRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td data-label="Touro / Sêmen"><b>${esc(d.nome)}</b></td><td data-label="Método">${metodoLabel(d.metodo)}</td><td data-label="Prenhas"><b style="color:var(--ok)">${d.pren}</b></td><td data-label="Vazias"><b style="color:var(--erro)">${d.vaz}</b></td><td data-label="% Prenhez"><b>${pp}%</b></td><td data-label="% Vazia">${100-pp}%</td></tr>`;}).join("") : `<tr><td colspan="6" class="empty">Nenhum diagnóstico registrado ainda.</td></tr>`}</tbody></table></div>
+      ${concDTRows.length?`<details class="exp" ${concDTRows.length>15?"":"open"}>
+        <summary>Por data de diagnóstico (${concDTRows.length})</summary>
+        <div class="exp-body" style="overflow:auto;max-height:360px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Data</th><th>Touro / Sêmen</th><th>Prenhas</th><th>Vazias</th><th>% Prenhez</th><th>% Vazia</th></tr></thead>
+        <tbody>${concDTRows.map(d=>{const pp=d.tot?Math.round(d.pren/d.tot*100):0; return `<tr><td data-label="Data">${d.data==="—"?"—":fmtDate(d.data)}</td><td data-label="Touro">${esc(d.nome)}</td><td data-label="Prenhas"><b style="color:var(--ok)">${d.pren}</b></td><td data-label="Vazias"><b style="color:var(--erro)">${d.vaz}</b></td><td data-label="% Prenhez"><b>${pp}%</b></td><td data-label="% Vazia">${100-pp}%</td></tr>`;}).join("")}</tbody></table></div>
+      </details>`:""}
+    </div>
+
+    <div class="card" id="rel-partos">
+      <h3>Previsão de partos</h3>
+      <p class="muted">Calculada a partir da confirmação (diagnóstico): IATF + 225 dias · monta natural + 220 dias.</p>
+      <div class="kpis">
+        <div class="kpi"><div class="n">${partos.length}</div><div class="l">Prenhas com previsão</div></div>
+        <div class="kpi"><div class="n" style="color:var(--ouro)">${prox60}</div><div class="l">Partos nos próximos 60 dias</div></div>
+        <div class="kpi"><div class="n" style="color:var(--txt2)">${semPrev}</div><div class="l">Prenhas sem previsão (falta data da monta)</div></div>
+      </div>
+      ${mesesParto.length?`
+      <h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--verde2)">Partos por mês</h4>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Mês</th><th>IATF</th><th>Monta natural</th><th>Total</th></tr></thead>
+      <tbody>${mesesParto.map(([mk,q])=>`<tr><td data-label="Mês"><b>${mesNome(mk)}</b></td><td data-label="IATF">${q.iatf}</td><td data-label="Monta natural">${q.monta}</td><td data-label="Total"><b>${q.total}</b></td></tr>`).join("")}
+      <tr style="border-top:2px solid var(--linha);font-weight:700"><td data-label="Mês">Total</td><td data-label="IATF">${totIatfParto}</td><td data-label="Monta natural">${totMontaParto}</td><td data-label="Total"><b>${partos.length}</b></td></tr></tbody></table></div>
+      <details class="exp" ${partos.length>15?"":"open"}>
+        <summary>Detalhe por data prevista (${partos.length})</summary>
+        <div class="exp-body" style="overflow:auto;max-height:380px;border:1px solid var(--linha);border-radius:8px"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Cobertura</th><th>Previsão de parto</th><th>Faltam</th></tr></thead>
+        <tbody>${partos.map(p=>`<tr><td data-label="Nº"><b>${p.f.numero??"—"}</b></td><td data-label="Categoria">${esc(categoriaAnimal(p.f))||"—"}</td><td data-label="Cobertura">${esc(p.cob)}</td><td data-label="Previsão">${fmtDate(p.dp)}</td><td data-label="Faltam">${faltamTxt(p.dp)}</td></tr>`).join("")}</tbody></table></div>
+      </details>
+      `:`<p class="muted">Nenhuma prenhez com data de monta/previsão ainda. Informe a data da monta nas prenhas (ex.: as do lote NOMA) para o app projetar o parto.</p>`}
+    </div>
+
+    <div class="card" id="rel-descarte">
+      <h3>Lista de descarte (candidatas)</h3>
+      <p class="muted">Fêmeas com <b>3 ou mais diagnósticos de vazia em até 6 meses</b> — candidatas a descarte. Total: ${descarte.length}.</p>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Idade</th><th>Motivo</th><th>Última info</th></tr></thead>
+      <tbody>${descarte.length? descarte.map(d=>`<tr>
+        <td data-label="Nº"><b>${d.f.numero??"—"}</b></td>
+        <td data-label="Categoria">${esc(d.cat)||"—"}</td>
+        <td data-label="Idade">${d.idade}</td>
+        <td data-label="Motivo"><span class="tag vazia">${d.motivo}</span></td>
+        <td data-label="Última info">${d.data?fmtDate(d.data):"—"}</td>
+      </tr>`).join("") : `<tr><td colspan="5" class="empty">Nenhuma fêmea candidata a descarte no momento.</td></tr>`}</tbody></table></div>
+    </div>`;
 }
 
 // ===================== CONFIGURAÇÕES =====================
@@ -523,7 +905,7 @@ function ribbon(txt){ return `<div class="ribbon">🔒 <b>A ativar</b> — ${txt
 function lockWrap(inner){ return `<div class="preview"><div class="lockover"></div><div class="demo">${inner}</div></div>`; }
 
 // ===================== FINANCEIRO — contas a pagar/receber =====================
-let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finItensCache={}, finNotaCache={}, finXmlCache={}, finPagto={};
+let finTipo='pagar', finMode='lista', finTituloId=null, finAvulsoId=null, finContaId=null, finItensCache={}, finNotaCache={}, finXmlCache={}, finPagto={};
 function titulosFiscais(){ return (L.titulos||[]); }
 function lancamentos(){ return (L.gestao_lancamentos||[]); }
 function avulsos(){ return lancamentos().filter(l=>l.origem==='avulso'); }
@@ -640,12 +1022,18 @@ function planoOptions(){
 function parsePlano(v){ if(!v) return {codigo:null,descricao:null}; const i=v.indexOf(' — '); if(i<0) return {codigo:null,descricao:v.trim()||null}; return {codigo:v.slice(0,i).trim()||null, descricao:v.slice(i+3).trim()||null}; }
 function propOptions(sel){ let o='<option value="">— não definida —</option>'; (L.propriedades||[]).forEach(p=>{ o+=`<option value="${esc(p.id)}"${p.id===sel?' selected':''}>${esc(p.nome)}${p.municipio?(' · '+esc(p.municipio)):''}</option>`; }); return o; }
 function propNome(id){ const p=(L.propriedades||[]).find(x=>x.id===id); return p?p.nome:null; }
+function contaLabel(ct){ if(!ct) return '—'; let s=ct.banco||'Conta'; if(ct.conta) s+=' · '+(ct.agencia?ct.agencia+'/':'')+ct.conta; return s; }
+function contaOptions(sel){ let o='<option value="">— não definida —</option>'; (L.contas||[]).forEach(ct=>{ o+=`<option value="${esc(ct.id)}"${ct.id===sel?' selected':''}>${esc(contaLabel(ct))}</option>`; }); return o; }
+function contaNome(id){ const ct=(L.contas||[]).find(x=>x.id===id); return ct?contaLabel(ct):null; }
 function planoTxt(l){ if(!l) return '—'; if(l.rateio_tipo==='produto') return 'por produto'; return l.plano_descricao||l.plano_codigo||'—'; }
 function formaSelect(id,sel){ return `<select id="${id}">`+['','Dinheiro','PIX','Boleto','Transferência','Cartão','Cheque','A prazo'].map(x=>`<option value="${x}"${x===(sel||'')?' selected':''}>${x||'—'}</option>`).join('')+`</select>`; }
 function statusTag(l){ if(l&&l.pago) return '<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>'; if(l) return '<span class="tag" style="background:#fdf3e0;color:#9a6b1a">lançado</span>'; return '<span class="tag" style="background:#eef1f4;color:#56607a">pendente</span>'; }
 function finTab(tp){ finTipo=tp; finMode='lista'; render(); }
 function finNovoAvulso(){ finMode='avulso'; finAvulsoId=null; render(); }
 function finVoltar(){ finMode='lista'; render(); }
+function finContas(){ finMode='contas'; render(); }
+function finNovaConta(){ finMode='conta_form'; finContaId=null; render(); }
+function abrirConta(id){ finMode='conta_form'; finContaId=id; render(); }
 function abrirTitulo(key){ if(key.slice(0,2)==='f:'){ finMode='detalhe'; finTituloId=key.slice(2); } else { finMode='avulso'; finAvulsoId=key.slice(2); } render(); }
 function valorEmAberto(tipo){
   let s=0;
@@ -656,6 +1044,8 @@ function valorEmAberto(tipo){
 function renderFinanceiro(c){
   if(finMode==='detalhe') return renderTituloDetalhe(c);
   if(finMode==='avulso') return renderAvulso(c);
+  if(finMode==='contas') return renderContas(c);
+  if(finMode==='conta_form') return renderContaForm(c);
   const tipo=finTipo;
   const fisc=titulosFiscais().filter(t=>t.tipo_titulo===tipo).map(t=>({ key:'f:'+t.id, contraparte:t.contraparte_nome, doc:(t.tipo_doc||'')+(t.numero?' '+t.numero:''), valor:Number(t.valor||0), data:t.data_emissao?String(t.data_emissao).slice(0,10):null, lanc:lancDeTitulo(t.id) }));
   const avuls=avulsos().filter(a=>a.tipo_titulo===tipo).map(a=>({ key:'a:'+a.id, contraparte:a.contraparte_nome, doc:(a.descricao||'avulso')+' (avulso)', valor:Number(a.valor||0), data:a.data_emissao||null, lanc:a }));
@@ -669,6 +1059,7 @@ function renderFinanceiro(c){
       <td>${l&&l.vencimento?fmtDate(l.vencimento):'—'}</td>
       <td>${esc(planoTxt(l))}</td>
       <td>${esc((l&&l.propriedade_nome)||'—')}</td>
+      <td>${esc((l&&l.conta_nome)||'—')}</td>
       <td>${statusTag(l)}</td>
       <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px;white-space:nowrap" onclick='event.stopPropagation();abrirTitulo("${it.key}")'>${l?'✏️ Editar':'Lançar ›'}</button></td>
     </tr>`; };
@@ -684,12 +1075,13 @@ function renderFinanceiro(c){
     <button class="${tipo==='pagar'?'on':''}" onclick="finTab('pagar')">A pagar</button>
     <button class="${tipo==='receber'?'on':''}" onclick="finTab('receber')">A receber</button>
     <button onclick="finNovoAvulso()">＋ Lançamento avulso</button>
+    <button onclick="finContas()">🏦 Contas bancárias</button>
     <button onclick="lancarTodos()" style="margin-left:auto;background:#c9a44a;color:#2e2508;border-color:#b28f35">⚡ Lançar automático</button>
     ${(L.gestao_lancamentos||[]).some(l=>l.auto)?`<button onclick="desfazerAutomaticos()">↩︎ Desfazer automáticos</button>`:''}
   </div>
   <div class="card">
     <h3>${tipo==='pagar'?'Contas a pagar':'Contas a receber'} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
-    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Propriedade</th><th>Situação</th><th>Ação</th></tr></thead>
+    ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Emissão</th><th>${tipo==='pagar'?'Fornecedor':'Cliente'}</th><th>Doc</th><th class="num">Valor</th><th>Vencimento</th><th>Plano</th><th>Propriedade</th><th>Conta</th><th>Situação</th><th>Ação</th></tr></thead>
     <tbody>${lista.slice(0,150).map(row).join('')}</tbody></table></div>${lista.length>150?`<p class="muted" style="margin-top:8px">Mostrando 150 de ${lista.length}.</p>`:''}`:'<div class="empty">Nenhum título.</div>'}
   </div>`;
 }
@@ -708,6 +1100,7 @@ function renderTituloDetalhe(c){
        <div class="field"><label>Vencimento</label><input id="lc_venc" type="date" value="${l.vencimento||''}"></div>
        <div class="field"><label>Forma de pagamento</label>${formaSelect('lc_forma',l.forma_pagamento)}</div>
        <div class="field"><label>Propriedade (a que fazenda pertence)</label><select id="lc_prop">${propOptions(l.propriedade_id)}</select></div>
+       <div class="field"><label>Conta bancária (débito/crédito)</label><select id="lc_conta">${contaOptions(l.conta_id)}</select></div>
      </div>
      <div class="field"><label>Rateio</label><select id="lc_rateio" onchange="toggleRateio()">
        <option value="total"${l.rateio_tipo!=='produto'?' selected':''}>Nota inteira (um plano de contas)</option>
@@ -766,8 +1159,9 @@ async function salvarLancamento(tituloId){
   } else { plano=parsePlano(val('lc_plano')); }
   const pago=document.getElementById('lc_pago')&&document.getElementById('lc_pago').checked;
   const propId=val('lc_prop')||null;
+  const contaId=val('lc_conta')||null;
   const doc={ origem:'sintegra', titulo_id:t.id, nota_chave:t.nota_chave, tipo_titulo:t.tipo_titulo, contraparte_nome:t.contraparte_nome, valor:Number(t.valor||0), data_emissao:t.data_emissao?String(t.data_emissao).slice(0,10):null,
-    vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
+    vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), conta_id:contaId, conta_nome:contaNome(contaId), rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
     pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
   const ex=lancDeTitulo(t.id);
   try{
@@ -790,6 +1184,7 @@ function renderAvulso(c){
        <div class="field"><label>Vencimento</label><input id="av_venc" type="date" value="${a.vencimento||''}"></div>
        <div class="field"><label>Forma de pagamento</label>${formaSelect('av_forma',a.forma_pagamento)}</div>
        <div class="field"><label>Propriedade</label><select id="av_prop">${propOptions(a.propriedade_id)}</select></div>
+       <div class="field"><label>Conta bancária (débito/crédito)</label><select id="av_conta">${contaOptions(a.conta_id)}</select></div>
        <div class="field"><label>Plano de contas</label><input id="av_plano" list="planos-dl" value="${esc(a.plano_codigo?((a.plano_codigo||'')+' — '+(a.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div>
      </div>
      <datalist id="planos-dl">${planoOptions()}</datalist>
@@ -808,8 +1203,9 @@ async function salvarAvulso(avulsoId){
   const pp=parsePlano(val('av_plano'));
   const pago=document.getElementById('av_pago')&&document.getElementById('av_pago').checked;
   const propId=val('av_prop')||null;
+  const contaId=val('av_conta')||null;
   const doc={ origem:'avulso', tipo_titulo:val('av_tipo')||'pagar', contraparte_nome:val('av_contra')||null, descricao:val('av_desc')||null, valor,
-    data_emissao:val('av_emiss')||null, vencimento:val('av_venc')||null, forma_pagamento:val('av_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), plano_codigo:pp.codigo, plano_descricao:pp.descricao,
+    data_emissao:val('av_emiss')||null, vencimento:val('av_venc')||null, forma_pagamento:val('av_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), conta_id:contaId, conta_nome:contaNome(contaId), plano_codigo:pp.codigo, plano_descricao:pp.descricao,
     rateio_tipo:'total', rateio:[], pago:!!pago, data_pagamento:pago?(val('av_dpag')||null):null, atualizado_em:new Date().toISOString() };
   try{
     if(avulsoId) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${avulsoId}`, {doc});
@@ -820,6 +1216,55 @@ async function salvarAvulso(avulsoId){
 async function excluirAvulso(id){
   if(!confirm('Excluir este lançamento avulso?')) return;
   try{ await reqWrite('DELETE', `/rest/v1/gestao_lancamentos?id=eq.${id}`); await recarregarLancamentos(); finMode='lista'; render(); }
+  catch(e){ alert('Erro: '+(e.message||e)); }
+}
+function renderContas(c){
+  const list=(L.contas||[]);
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">🏦 Contas bancárias</div></div>
+   <div class="pgsub">Cadastre as contas do banco para vincular de qual conta saiu o débito ou entrou o crédito de cada lançamento.</div>
+   <div class="finabas"><button onclick="finNovaConta()">＋ Nova conta</button></div>
+   <div class="card">
+     <h3>Contas cadastradas <span class="muted" style="font-weight:400">(${list.length})</span></h3>
+     ${list.length?`<div style="overflow-x:auto"><table><thead><tr><th>Banco</th><th>Agência</th><th>Conta</th><th>Tipo</th><th>Titular</th><th>PIX</th><th>Ação</th></tr></thead>
+     <tbody>${list.map(ct=>`<tr onclick='abrirConta("${ct.id}")' style="cursor:pointer">
+        <td><b>${esc(ct.banco||'—')}</b></td><td>${esc(ct.agencia||'—')}</td><td>${esc(ct.conta||'—')}</td><td>${esc(ct.tipo||'—')}</td><td>${esc(ct.titular||'—')}</td><td>${esc(ct.pix||'—')}</td>
+        <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px" onclick='event.stopPropagation();abrirConta("${ct.id}")'>✏️ Editar</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhuma conta cadastrada ainda. Clique em “＋ Nova conta”.</div>'}
+   </div>`;
+}
+function renderContaForm(c){
+  const ct=finContaId?((L.contas||[]).find(x=>x.id===finContaId)||{}):{};
+  const tipos=['corrente','poupança','aplicação','caixa'];
+  const tipoOpts=['<option value="">— tipo —</option>'].concat(tipos.map(x=>`<option value="${x}"${x===(ct.tipo||'')?' selected':''}>${x}</option>`));
+  if(ct.tipo && !tipos.includes(ct.tipo)) tipoOpts.push(`<option value="${esc(ct.tipo)}" selected>${esc(ct.tipo)}</option>`);
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finContas()">← Voltar</button><div class="pgtitle" style="margin:0">${finContaId?'Editar conta bancária':'Nova conta bancária'}</div></div>
+   <div class="card">
+     <div class="grid">
+       <div class="field"><label>Banco *</label><input id="ct_banco" value="${esc(ct.banco||'')}" placeholder="SICOOB, Banco do Brasil…"></div>
+       <div class="field"><label>Agência</label><input id="ct_ag" value="${esc(ct.agencia||'')}"></div>
+       <div class="field"><label>Conta</label><input id="ct_conta" value="${esc(ct.conta||'')}"></div>
+       <div class="field"><label>Tipo</label><select id="ct_tipo">${tipoOpts.join('')}</select></div>
+       <div class="field"><label>Titular</label><input id="ct_tit" value="${esc(ct.titular||'')}"></div>
+       <div class="field"><label>Chave PIX</label><input id="ct_pix" value="${esc(ct.pix||'')}"></div>
+     </div>
+     <button class="btn" onclick='salvarConta(${finContaId?`"${finContaId}"`:'null'})'>Salvar conta</button>
+     ${finContaId?`<button class="btn ghost" style="margin-left:8px" onclick='excluirConta("${finContaId}")'>Excluir</button>`:''}
+   </div>`;
+}
+async function salvarConta(id){
+  const val=x=>{const e=document.getElementById(x);return e?e.value.trim():'';};
+  const banco=val('ct_banco'); if(!banco){ alert('Informe o banco.'); return; }
+  const body={ banco, agencia:val('ct_ag')||null, conta:val('ct_conta')||null, tipo:val('ct_tipo')||null, titular:val('ct_tit')||null, pix:val('ct_pix')||null };
+  try{
+    if(id){ await reqWrite('PATCH', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`, body); }
+    else { const pid=await lerProdutorId(); if(pid) body.produtor_id=pid; await reqWrite('POST', `/rest/v1/fiscal_contas_bancarias`, body); }
+    L.contas=await lerContas(); finMode='contas'; render();
+  }catch(e){ alert('Erro ao salvar conta: '+(e.message||e)); }
+}
+async function excluirConta(id){
+  if(!confirm('Excluir esta conta bancária? Lançamentos já vinculados a ela mantêm o nome gravado.')) return;
+  try{ await reqWrite('DELETE', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`); L.contas=await lerContas(); finMode='contas'; render(); }
   catch(e){ alert('Erro: '+(e.message||e)); }
 }
 
