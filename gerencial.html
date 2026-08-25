@@ -246,10 +246,11 @@ async function req(path, comToken){
   });
 }
 async function reqWrite(method, path, body){
+  const token=await garantirToken();   // escrita como usuário autenticado (necessário p/ tabelas do Sintegra)
   return new Promise((resolve,reject)=>{
     const x=new XMLHttpRequest();
     x.open(method, SB_URL+path, true);
-    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+SB_KEY);
+    x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+(token||SB_KEY));
     x.setRequestHeader("Content-Type","application/json"); x.setRequestHeader("Prefer","return=minimal");
     x.timeout=20000;
     x.onload=()=>{ if(x.status>=200&&x.status<300) resolve(true); else reject(new Error("HTTP "+x.status+" "+(x.responseText||""))); };
@@ -290,6 +291,11 @@ async function lerContas(){
   try{ const pid=await lerProdutorId();
     const url = pid? `/rest/v1/fiscal_contas_bancarias?produtor_id=eq.${pid}&select=id,banco,agencia,conta,tipo,titular,pix&order=banco` : `/rest/v1/fiscal_contas_bancarias?select=id,banco,agencia,conta,tipo,titular,pix&order=banco`;
     return await req(url, true); }catch(e){ return []; }
+}
+async function lerExtratos(){
+  try{ const pid=await lerProdutorId(); if(!pid) return [];
+    return await req(`/rest/v1/gestao_extratos?produtor_id=eq.${pid}&select=id,origem,conta_ref,data,descricao,documento,valor,tipo,conciliado,titulo_id,hash&order=data.desc&limit=3000`, true);
+  }catch(e){ return []; }
 }
 
 function mostrarLogin(msg){
@@ -383,6 +389,7 @@ const SECOES=[
   {id:"maquinarios",   ic:"🚜", nome:"Maquinários",   grupo:"Gestão",     vivo:false},
   {id:"contabilidade", ic:"📒", nome:"Contabilidade", grupo:"Gestão",     vivo:false},
   {id:"relatorios",    ic:"📈", nome:"Relatórios",    grupo:"Análise",    vivo:true },
+  {id:"cadastros",     ic:"🗂️", nome:"Cadastros",     grupo:"Sistema",    vivo:true },
   {id:"config",        ic:"⚙️", nome:"Configurações", grupo:"Sistema",    vivo:true },
 ];
 
@@ -398,6 +405,7 @@ async function carregar(){
     L.planos=await lerPlanos();
     L.propriedades=await lerPropriedades();
     L.contas=await lerContas();
+    L.extratos=await lerExtratos();
     est.style.display="none"; shell.style.display="flex";
     document.getElementById("topright").innerHTML=`
       <span class="userchip">👤 <b>${esc(SESSION.email)}</b></span>
@@ -430,7 +438,7 @@ function render(){
   const id=secAtual();
   document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("active",n.dataset.sec===id));
   const c=document.getElementById("conteudo");
-  const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig,
+  const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig, cadastros:renderCadastros,
     financeiro:renderFinanceiro, vendas:renderVendas, pastagem:renderPastagem, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
   (map[id]||renderRebanho)(c);
   window.scrollTo(0,0);
@@ -1031,23 +1039,33 @@ function statusTag(l){ if(l&&l.pago) return '<span class="tag" style="background
 function finTab(tp){ finTipo=tp; finMode='lista'; render(); }
 function finNovoAvulso(){ finMode='avulso'; finAvulsoId=null; render(); }
 function finVoltar(){ finMode='lista'; render(); }
-function finContas(){ finMode='contas'; render(); }
-function finNovaConta(){ finMode='conta_form'; finContaId=null; render(); }
-function abrirConta(id){ finMode='conta_form'; finContaId=id; render(); }
+function finLivro(){ finMode='livro'; render(); }
+function finConcilia(){ finMode='concilia'; render(); }
+// contas bancárias agora vivem na seção Cadastros
+let cadContaMode='lista', cadContaId=null;
+function cadContasHome(){ cadContaMode='lista'; render(); }
+function cadNovaConta(){ cadContaMode='form'; cadContaId=null; render(); }
+function cadEditConta(id){ cadContaMode='form'; cadContaId=id; render(); }
+function renderCadastros(c){
+  if(cadContaMode==='form') return renderContaForm(c);
+  return renderContasLista(c);
+}
 function abrirTitulo(key){ if(key.slice(0,2)==='f:'){ finMode='detalhe'; finTituloId=key.slice(2); } else { finMode='avulso'; finAvulsoId=key.slice(2); } render(); }
 function valorEmAberto(tipo){
   let s=0;
-  titulosFiscais().filter(t=>t.tipo_titulo===tipo).forEach(t=>{ const l=lancDeTitulo(t.id); if(!(l&&l.pago)) s+=Number(t.valor||0); });
+  titulosFiscais().filter(t=>t.tipo_titulo===tipo).forEach(t=>{ if(!tituloPago(t)) s+=Number(t.valor||0); });
   avulsos().filter(a=>a.tipo_titulo===tipo).forEach(a=>{ if(!a.pago) s+=Number(a.valor||0); });
   return s;
 }
 function renderFinanceiro(c){
   if(finMode==='detalhe') return renderTituloDetalhe(c);
   if(finMode==='avulso') return renderAvulso(c);
-  if(finMode==='contas') return renderContas(c);
-  if(finMode==='conta_form') return renderContaForm(c);
+  if(finMode==='livro') return renderLivroCaixa(c);
+  if(finMode==='concilia') return renderConciliacao(c);
   const tipo=finTipo;
-  const fisc=titulosFiscais().filter(t=>t.tipo_titulo===tipo).map(t=>({ key:'f:'+t.id, contraparte:t.contraparte_nome, doc:(t.tipo_doc||'')+(t.numero?' '+t.numero:''), valor:Number(t.valor||0), data:t.data_emissao?String(t.data_emissao).slice(0,10):null, lanc:lancDeTitulo(t.id) }));
+  const fisc=titulosFiscais().filter(t=>t.tipo_titulo===tipo).map(t=>{ let lanc=lancDeTitulo(t.id);
+    if(t.pago){ lanc=Object.assign({}, lanc||{}, {pago:true, vencimento:(lanc&&lanc.vencimento)||t.vencimento, conta_nome:(lanc&&lanc.conta_nome)||t.conta_ref, data_pagamento:(lanc&&lanc.data_pagamento)||t.data_pagamento}); }
+    return { key:'f:'+t.id, contraparte:t.contraparte_nome, doc:(t.tipo_doc||'')+(t.numero?' '+t.numero:''), valor:Number(t.valor||0), data:t.data_emissao?String(t.data_emissao).slice(0,10):null, lanc }; });
   const avuls=avulsos().filter(a=>a.tipo_titulo===tipo).map(a=>({ key:'a:'+a.id, contraparte:a.contraparte_nome, doc:(a.descricao||'avulso')+' (avulso)', valor:Number(a.valor||0), data:a.data_emissao||null, lanc:a }));
   const lista=fisc.concat(avuls).sort((x,y)=>String(y.data||'').localeCompare(String(x.data||'')));
   const totPagar=valorEmAberto('pagar'), totReceber=valorEmAberto('receber'), saldo=totReceber-totPagar;
@@ -1075,7 +1093,8 @@ function renderFinanceiro(c){
     <button class="${tipo==='pagar'?'on':''}" onclick="finTab('pagar')">A pagar</button>
     <button class="${tipo==='receber'?'on':''}" onclick="finTab('receber')">A receber</button>
     <button onclick="finNovoAvulso()">＋ Lançamento avulso</button>
-    <button onclick="finContas()">🏦 Contas bancárias</button>
+    <button onclick="finLivro()">📖 Livro caixa</button>
+    <button onclick="finConcilia()">🔗 Conciliação</button>
     <button onclick="lancarTodos()" style="margin-left:auto;background:#c9a44a;color:#2e2508;border-color:#b28f35">⚡ Lançar automático</button>
     ${(L.gestao_lancamentos||[]).some(l=>l.auto)?`<button onclick="desfazerAutomaticos()">↩︎ Desfazer automáticos</button>`:''}
   </div>
@@ -1164,12 +1183,24 @@ async function salvarLancamento(tituloId){
     vencimento:val('lc_venc')||null, parcelas:((finPagto[t.nota_chave]||{}).parcelas||[]), forma_pagamento:val('lc_forma')||null, propriedade_id:propId, propriedade_nome:propNome(propId), conta_id:contaId, conta_nome:contaNome(contaId), rateio_tipo:rateioTipo, rateio, plano_codigo:plano.codigo, plano_descricao:plano.descricao,
     pago:!!pago, data_pagamento:pago?(val('lc_dpag')||null):null, atualizado_em:new Date().toISOString() };
   const ex=lancDeTitulo(t.id);
+  const venc=val('lc_venc')||null;
+  const contaRef=contaNome(contaId);
   try{
     if(ex) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${ex.id}`, {doc});
     else await reqWrite('POST', `/rest/v1/gestao_lancamentos`, {doc});
+    // baixa/conciliação volta pro SINTEGRA (gestao_titulos) → forma o livro caixa
+    try{
+      await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${t.id}`, {
+        status: pago?'pago':'lancado', lancado_em:new Date().toISOString(),
+        pago:!!pago, data_pagamento: pago?(val('lc_dpag')||null):null, valor_pago: pago?Number(t.valor||0):null,
+        conta_ref: contaRef, forma_pagamento: val('lc_forma')||null, vencimento: venc
+      });
+      await recarregarTitulos();
+    }catch(e2){ console.warn('baixa gestao_titulos falhou', e2); alert('Lançamento salvo no app, mas a baixa não voltou pro SINTEGRA: '+(e2.message||e2)); }
     await recarregarLancamentos(); finMode='lista'; render();
   }catch(e){ alert('Erro ao salvar: '+(e.message||e)); }
 }
+async function recarregarTitulos(){ try{ L.titulos=await lerTitulos(); }catch(e){} }
 function renderAvulso(c){
   const a=finAvulsoId?(avulsos().find(x=>x.id===finAvulsoId)||{}):{};
   c.innerHTML=`
@@ -1218,27 +1249,31 @@ async function excluirAvulso(id){
   try{ await reqWrite('DELETE', `/rest/v1/gestao_lancamentos?id=eq.${id}`); await recarregarLancamentos(); finMode='lista'; render(); }
   catch(e){ alert('Erro: '+(e.message||e)); }
 }
-function renderContas(c){
+function renderContasLista(c){
   const list=(L.contas||[]);
   c.innerHTML=`
-   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">🏦 Contas bancárias</div></div>
-   <div class="pgsub">Cadastre as contas do banco para vincular de qual conta saiu o débito ou entrou o crédito de cada lançamento.</div>
-   <div class="finabas"><button onclick="finNovaConta()">＋ Nova conta</button></div>
+   <div class="pgtitle">🗂️ Cadastros</div>
+   <div class="pgsub">Cadastros usados no financeiro e na operação.</div>
+   <div class="finabas"><button class="on">🏦 Contas bancárias</button></div>
    <div class="card">
-     <h3>Contas cadastradas <span class="muted" style="font-weight:400">(${list.length})</span></h3>
+     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+       <h3 style="margin:0">Contas bancárias <span class="muted" style="font-weight:400">(${list.length})</span></h3>
+       <button class="btn" onclick="cadNovaConta()">＋ Nova conta</button>
+     </div>
+     <p class="muted" style="margin-top:8px">Vincule de qual conta saiu o débito ou entrou o crédito de cada lançamento; também serve para conciliar o extrato.</p>
      ${list.length?`<div style="overflow-x:auto"><table><thead><tr><th>Banco</th><th>Agência</th><th>Conta</th><th>Tipo</th><th>Titular</th><th>PIX</th><th>Ação</th></tr></thead>
-     <tbody>${list.map(ct=>`<tr onclick='abrirConta("${ct.id}")' style="cursor:pointer">
+     <tbody>${list.map(ct=>`<tr onclick='cadEditConta("${ct.id}")' style="cursor:pointer">
         <td><b>${esc(ct.banco||'—')}</b></td><td>${esc(ct.agencia||'—')}</td><td>${esc(ct.conta||'—')}</td><td>${esc(ct.tipo||'—')}</td><td>${esc(ct.titular||'—')}</td><td>${esc(ct.pix||'—')}</td>
-        <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px" onclick='event.stopPropagation();abrirConta("${ct.id}")'>✏️ Editar</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhuma conta cadastrada ainda. Clique em “＋ Nova conta”.</div>'}
+        <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px" onclick='event.stopPropagation();cadEditConta("${ct.id}")'>✏️ Editar</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhuma conta cadastrada ainda. Clique em “＋ Nova conta”.</div>'}
    </div>`;
 }
 function renderContaForm(c){
-  const ct=finContaId?((L.contas||[]).find(x=>x.id===finContaId)||{}):{};
+  const ct=cadContaId?((L.contas||[]).find(x=>x.id===cadContaId)||{}):{};
   const tipos=['corrente','poupança','aplicação','caixa'];
   const tipoOpts=['<option value="">— tipo —</option>'].concat(tipos.map(x=>`<option value="${x}"${x===(ct.tipo||'')?' selected':''}>${x}</option>`));
   if(ct.tipo && !tipos.includes(ct.tipo)) tipoOpts.push(`<option value="${esc(ct.tipo)}" selected>${esc(ct.tipo)}</option>`);
   c.innerHTML=`
-   <div class="finhead"><button class="btn ghost" onclick="finContas()">← Voltar</button><div class="pgtitle" style="margin:0">${finContaId?'Editar conta bancária':'Nova conta bancária'}</div></div>
+   <div class="finhead"><button class="btn ghost" onclick="cadContasHome()">← Voltar</button><div class="pgtitle" style="margin:0">${cadContaId?'Editar conta bancária':'Nova conta bancária'}</div></div>
    <div class="card">
      <div class="grid">
        <div class="field"><label>Banco *</label><input id="ct_banco" value="${esc(ct.banco||'')}" placeholder="SICOOB, Banco do Brasil…"></div>
@@ -1248,8 +1283,8 @@ function renderContaForm(c){
        <div class="field"><label>Titular</label><input id="ct_tit" value="${esc(ct.titular||'')}"></div>
        <div class="field"><label>Chave PIX</label><input id="ct_pix" value="${esc(ct.pix||'')}"></div>
      </div>
-     <button class="btn" onclick='salvarConta(${finContaId?`"${finContaId}"`:'null'})'>Salvar conta</button>
-     ${finContaId?`<button class="btn ghost" style="margin-left:8px" onclick='excluirConta("${finContaId}")'>Excluir</button>`:''}
+     <button class="btn" onclick='salvarConta(${cadContaId?`"${cadContaId}"`:'null'})'>Salvar conta</button>
+     ${cadContaId?`<button class="btn ghost" style="margin-left:8px" onclick='excluirConta("${cadContaId}")'>Excluir</button>`:''}
    </div>`;
 }
 async function salvarConta(id){
@@ -1259,13 +1294,202 @@ async function salvarConta(id){
   try{
     if(id){ await reqWrite('PATCH', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`, body); }
     else { const pid=await lerProdutorId(); if(pid) body.produtor_id=pid; await reqWrite('POST', `/rest/v1/fiscal_contas_bancarias`, body); }
-    L.contas=await lerContas(); finMode='contas'; render();
+    L.contas=await lerContas(); cadContaMode='lista'; render();
   }catch(e){ alert('Erro ao salvar conta: '+(e.message||e)); }
 }
 async function excluirConta(id){
   if(!confirm('Excluir esta conta bancária? Lançamentos já vinculados a ela mantêm o nome gravado.')) return;
-  try{ await reqWrite('DELETE', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`); L.contas=await lerContas(); finMode='contas'; render(); }
+  try{ await reqWrite('DELETE', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`); L.contas=await lerContas(); cadContaMode='lista'; render(); }
   catch(e){ alert('Erro: '+(e.message||e)); }
+}
+
+/* ===================== LIVRO CAIXA ===================== */
+// pago = baixa dada no título do SINTEGRA OU no lançamento avulso do app
+function tituloPago(t){ if(t&&t.pago) return true; const l=lancDeTitulo(t.id); return !!(l&&l.pago); }
+function linhasLivroCaixa(){
+  const out=[];
+  // títulos fiscais (baixa gravada no gestao_titulos → volta pro SINTEGRA)
+  titulosFiscais().forEach(t=>{ const l=lancDeTitulo(t.id)||{};
+    const pago = t.pago || l.pago;
+    const dp = t.data_pagamento || l.data_pagamento;
+    if(!pago || !dp) return;
+    out.push({ data:String(dp).slice(0,10), tipo:t.tipo_titulo, contraparte:t.contraparte_nome, doc:(t.tipo_doc||'')+(t.numero?(' '+t.numero):''),
+      hist:t.natureza||t.descricao||'', conta:t.conta_ref||l.conta_nome||'', plano:planoTxt(l),
+      valor:Number(t.valor_pago!=null?t.valor_pago:(l.valor!=null?l.valor:t.valor))||0, forma:t.forma_pagamento||l.forma_pagamento||'' });
+  });
+  // avulsos pagos (só no app; entram no livro caixa gerado aqui)
+  avulsos().forEach(a=>{ if(!a.pago || !a.data_pagamento) return;
+    out.push({ data:String(a.data_pagamento).slice(0,10), tipo:a.tipo_titulo, contraparte:a.contraparte_nome, doc:(a.descricao||'avulso'),
+      hist:a.descricao||'', conta:a.conta_nome||'', plano:planoTxt(a), valor:Number(a.valor)||0, forma:a.forma_pagamento||'' });
+  });
+  out.sort((x,y)=> x.data<y.data?-1:x.data>y.data?1:0);
+  return out;
+}
+function renderLivroCaixa(c){
+  const contaSel=window.__lcConta||'';
+  let linhas=linhasLivroCaixa();
+  if(contaSel) linhas=linhas.filter(l=>l.conta===contaSel);
+  let saldo=0, tEnt=0, tSai=0;
+  const rows=linhas.map(l=>{ const ent=l.tipo==='receber'?l.valor:0, sai=l.tipo==='pagar'?l.valor:0; saldo+=ent-sai; tEnt+=ent; tSai+=sai;
+    return `<tr>
+      <td data-label="Data">${fmtDate(l.data)}</td>
+      <td data-label="Conta">${esc(l.conta||'—')}</td>
+      <td data-label="Histórico"><b>${esc(l.contraparte||'—')}</b>${l.doc?` · ${esc(l.doc)}`:''}${l.hist?`<br><span class="muted">${esc(l.hist)}</span>`:''}</td>
+      <td data-label="Plano">${esc(l.plano||'—')}</td>
+      <td data-label="Entrada" class="num money pos">${ent?fmtBRL(ent):'—'}</td>
+      <td data-label="Saída" class="num money neg">${sai?fmtBRL(sai):'—'}</td>
+      <td data-label="Saldo" class="num money" style="color:${saldo>=0?'#2e7d54':'#b23b3b'}">${fmtBRL(saldo)}</td>
+    </tr>`; }).join('');
+  const contasUsadas=[...new Set(linhasLivroCaixa().map(l=>l.conta).filter(Boolean))];
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">📖 Livro caixa</div></div>
+   <div class="pgsub">Formado pelas baixas dadas nos títulos (que voltam pro <b>SINTEGRA Lamarta</b>) e pelos avulsos pagos. Ordenado por data de pagamento.</div>
+   <div class="card"><div class="kpis">
+     <div class="kpi"><div class="v money pos">${fmtBRL(tEnt)}</div><div class="l">Entradas (recebidas)</div></div>
+     <div class="kpi"><div class="v money neg">${fmtBRL(tSai)}</div><div class="l">Saídas (pagas)</div></div>
+     <div class="kpi"><div class="v money" style="color:${(tEnt-tSai)>=0?'#2e7d54':'#b23b3b'}">${fmtBRL(tEnt-tSai)}</div><div class="l">Saldo do período</div></div>
+   </div></div>
+   <div class="finabas" style="align-items:center">
+     <label class="muted" style="font-weight:600">Conta:</label>
+     <select onchange="window.__lcConta=this.value; render()" style="padding:7px 10px;border:1px solid var(--linha);border-radius:8px">
+       <option value=""${!contaSel?' selected':''}>Todas as contas</option>
+       ${contasUsadas.map(cn=>`<option value="${esc(cn)}"${cn===contaSel?' selected':''}>${esc(cn)}</option>`).join('')}
+     </select>
+     <button onclick="exportarLivroCaixa()" style="margin-left:auto">⬇️ Exportar CSV</button>
+   </div>
+   <div class="card">
+     <h3>Movimento de caixa <span class="muted" style="font-weight:400">(${linhas.length})</span></h3>
+     ${linhas.length?`<div style="overflow-x:auto"><table class="rt"><thead><tr><th>Data</th><th>Conta</th><th>Histórico</th><th>Plano</th><th class="num">Entrada</th><th class="num">Saída</th><th class="num">Saldo</th></tr></thead>
+     <tbody>${rows}</tbody></table></div>`:'<div class="empty">Nenhuma baixa ainda. Dê baixa nos títulos (marcar como pago) para formar o livro caixa.</div>'}
+   </div>`;
+}
+function exportarLivroCaixa(){
+  const contaSel=window.__lcConta||'';
+  let linhas=linhasLivroCaixa(); if(contaSel) linhas=linhas.filter(l=>l.conta===contaSel);
+  let saldo=0;
+  const head=['Data','Conta','Contraparte','Documento','Histórico','Plano de contas','Entrada','Saída','Saldo'];
+  const esc2=s=>'"'+String(s==null?'':s).replace(/"/g,'""')+'"';
+  const rows=linhas.map(l=>{ const ent=l.tipo==='receber'?l.valor:0, sai=l.tipo==='pagar'?l.valor:0; saldo+=ent-sai;
+    return [l.data,l.conta,l.contraparte,l.doc,l.hist,l.plano,ent?ent.toFixed(2).replace('.',','):'',sai?sai.toFixed(2).replace('.',','):'',saldo.toFixed(2).replace('.',',')].map(esc2).join(';'); });
+  const csv='﻿'+[head.map(esc2).join(';')].concat(rows).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='livro-caixa.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+/* ===================== CONCILIAÇÃO BANCÁRIA (extrato) ===================== */
+function parseNumBR(s){ if(s==null) return null; let x=String(s).replace(/\s|R\$/gi,''); if(!/[0-9]/.test(x)) return null;
+  if(x.indexOf(',')>=0){ x=x.replace(/\./g,'').replace(',', '.'); } // 1.234,56 -> 1234.56
+  const n=parseFloat(x); return isNaN(n)?null:n; }
+function parseDataBR(s){ if(!s) return null; s=String(s).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m=s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/); if(m){ let a=m[3]; if(a.length===2) a='20'+a; return `${a}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  m=s.match(/^(\d{8})$/); if(m) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  return null; }
+function parseExtrato(txt){
+  txt=(txt||'').trim(); if(!txt) return [];
+  if(/<STMTTRN>|<OFX>/i.test(txt)){
+    const out=[]; txt.split(/<STMTTRN>/i).slice(1).forEach(b=>{
+      const g=tag=>{ const m=b.match(new RegExp('<'+tag+'>\\s*([^<\\r\\n]*)','i')); return m?m[1].trim():''; };
+      const data=parseDataBR(g('DTPOSTED').slice(0,8)); const valor=parseNumBR(g('TRNAMT')); const memo=g('MEMO')||g('NAME')||''; const fit=g('FITID')||'';
+      if(data && valor!=null) out.push({data, descricao:memo, documento:fit, valor});
+    });
+    return out;
+  }
+  // CSV simples: Data;Descrição;Valor  (valor negativo = saída)
+  const out=[];
+  txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+    if(/^data\s*[;,]/i.test(l)) return; // cabeçalho
+    const delim = l.indexOf(';')>=0?';':','; const p=l.split(delim);
+    if(p.length<3) return;
+    const data=parseDataBR(p[0]); const valor=parseNumBR(p[p.length-1]); const descricao=p.slice(1,p.length-1).join(' ').trim();
+    if(data && valor!=null) out.push({data, descricao, documento:'', valor});
+  });
+  return out;
+}
+function hashExtrato(contaRef,e){ return [contaRef,e.data,e.valor.toFixed(2),(e.descricao||'').slice(0,40)].join('|'); }
+function renderConciliacao(c){
+  const contas=(L.contas||[]);
+  const extratos=(L.extratos||[]).slice();
+  const pend=extratos.filter(e=>!e.conciliado);
+  c.innerHTML=`
+   <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">🔗 Conciliação bancária</div></div>
+   <div class="pgsub">Importe o extrato do banco e case cada movimento com o título correspondente. Ao conciliar, o título recebe baixa e volta pro SINTEGRA.</div>
+   <div class="card">
+     <h3>Importar extrato</h3>
+     <div class="grid">
+       <div class="field"><label>Conta bancária</label><select id="cc_conta">${contaOptions('')}</select></div>
+       <div class="field"><label>Formato aceito</label><input value="OFX do banco  ou  CSV: Data;Descrição;Valor" disabled></div>
+     </div>
+     <div class="field" style="margin-top:8px"><label>Cole o extrato (OFX ou CSV — um movimento por linha, valor negativo = saída)</label><textarea id="cc_txt" rows="5" placeholder="01/08/2026;PAGto FORNECEDOR X;-1234,56&#10;03/08/2026;RECEBIMENTO Y;2000,00"></textarea></div>
+     <button class="btn" onclick="importarExtrato()">Pré-visualizar e importar</button>
+     <div id="cc_prev" style="margin-top:10px"></div>
+   </div>
+   <div class="card">
+     <h3>Movimentos do extrato <span class="muted" style="font-weight:400">(${pend.length} pendente(s) de ${extratos.length})</span></h3>
+     ${extratos.length?`<div style="overflow-x:auto"><table class="rt"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th class="num">Valor</th><th>Situação</th><th>Conciliar com</th></tr></thead>
+       <tbody>${extratos.slice(0,300).map(linhaExtratoHTML).join('')}</tbody></table></div>`:'<div class="empty">Nenhum movimento importado ainda.</div>'}
+   </div>`;
+}
+function sugerirTitulo(e){
+  const alvoTipo = e.valor<0?'pagar':'receber';
+  const cands=titulosFiscais().filter(t=>t.tipo_titulo===alvoTipo && !tituloPago(t) && Math.abs(Number(t.valor||0)-Math.abs(e.valor))<0.02);
+  if(!cands.length) return null;
+  cands.sort((a,b)=>{ const da=Math.abs(new Date((a.vencimento||a.data_emissao||e.data))-new Date(e.data)); const db=Math.abs(new Date((b.vencimento||b.data_emissao||e.data))-new Date(e.data)); return da-db; });
+  return cands[0];
+}
+function linhaExtratoHTML(e){
+  const sug = e.conciliado? null : sugerirTitulo(e);
+  const sit = e.conciliado? '<span class="tag" style="background:#e1f4e6;color:#2e7d54">conciliado</span>' : '<span class="tag" style="background:#fdf3e0;color:#9a6b1a">pendente</span>';
+  let acao='—';
+  if(e.conciliado){ acao=`<button class="btn ghost" style="padding:5px 10px;font-size:12px" onclick='desconciliar("${e.id}","${e.titulo_id||''}")'>Desfazer</button>`; }
+  else if(sug){ acao=`<div style="display:flex;flex-direction:column;gap:4px"><span>${esc(sug.contraparte_nome||'')} · ${fmtBRL(sug.valor)}</span><button class="btn" style="padding:5px 10px;font-size:12px" onclick='conciliar("${e.id}","${sug.id}")'>✓ Conciliar</button></div>`; }
+  else{ acao='<span class="muted">sem título compatível</span>'; }
+  return `<tr>
+    <td data-label="Data">${fmtDate(e.data)}</td>
+    <td data-label="Conta">${esc(e.conta_ref||'—')}</td>
+    <td data-label="Descrição">${esc(e.descricao||'—')}</td>
+    <td data-label="Valor" class="num money ${Number(e.valor)<0?'neg':'pos'}">${fmtBRL(e.valor)}</td>
+    <td data-label="Situação">${sit}</td>
+    <td data-label="Conciliar com">${acao}</td>
+  </tr>`;
+}
+async function importarExtrato(){
+  const contaId=(document.getElementById('cc_conta')||{}).value||'';
+  const contaRef=contaNome(contaId);
+  if(!contaRef){ alert('Escolha a conta bancária do extrato.'); return; }
+  const txt=(document.getElementById('cc_txt')||{}).value||'';
+  const linhas=parseExtrato(txt);
+  const prev=document.getElementById('cc_prev');
+  if(!linhas.length){ if(prev) prev.innerHTML='<div class="muted">Não consegui ler nenhum movimento. Confira o formato (OFX ou CSV Data;Descrição;Valor).</div>'; return; }
+  const existentes=new Set((L.extratos||[]).map(e=>e.hash).filter(Boolean));
+  const novos=linhas.filter(e=>!existentes.has(hashExtrato(contaRef,e)));
+  if(prev) prev.innerHTML=`<div class="muted">Lidos ${linhas.length} movimento(s); ${novos.length} novo(s) para importar${linhas.length-novos.length?` (${linhas.length-novos.length} já existiam)`:''}.</div>`;
+  if(!novos.length) return;
+  if(!confirm(`Importar ${novos.length} movimento(s) do extrato para a conta ${contaRef}?`)) return;
+  const pid=await lerProdutorId();
+  const body=novos.map(e=>({ produtor_id:pid, origem:'import', conta_ref:contaRef, data:e.data, descricao:e.descricao||null, documento:e.documento||null, valor:e.valor, tipo:e.valor<0?'debito':'credito', conciliado:false, hash:hashExtrato(contaRef,e) }));
+  try{
+    // insere em blocos
+    for(let i=0;i<body.length;i+=100){ await reqWrite('POST', `/rest/v1/gestao_extratos`, body.slice(i,i+100)); }
+    L.extratos=await lerExtratos(); render();
+  }catch(e){ alert('Erro ao importar extrato: '+(e.message||e)); }
+}
+async function conciliar(extId, titId){
+  const e=(L.extratos||[]).find(x=>x.id===extId); const t=titulosFiscais().find(x=>x.id===titId);
+  if(!e||!t) return;
+  try{
+    await reqWrite('PATCH', `/rest/v1/gestao_extratos?id=eq.${extId}`, { conciliado:true, titulo_id:titId });
+    await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${titId}`, { pago:true, status:'pago', data_pagamento:e.data, valor_pago:Math.abs(Number(e.valor)), conta_ref:e.conta_ref, extrato_id:extId, lancado_em:new Date().toISOString() });
+    await recarregarTitulos(); L.extratos=await lerExtratos(); render();
+  }catch(err){ alert('Erro ao conciliar: '+(err.message||err)); }
+}
+async function desconciliar(extId, titId){
+  if(!confirm('Desfazer a conciliação deste movimento? O título volta a ficar em aberto.')) return;
+  try{
+    await reqWrite('PATCH', `/rest/v1/gestao_extratos?id=eq.${extId}`, { conciliado:false, titulo_id:null });
+    if(titId) await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${titId}`, { pago:false, status:'lancado', data_pagamento:null, valor_pago:null, extrato_id:null });
+    await recarregarTitulos(); L.extratos=await lerExtratos(); render();
+  }catch(err){ alert('Erro: '+(err.message||err)); }
 }
 
 function veiculoDaPosicaoG(vs,pos){ let acc=0; for(let k=0;k<(vs||[]).length;k++){ acc+=(vs[k].capacidade||0); if(pos<acc) return k; } return Math.max(0,(vs||[]).length-1); }
