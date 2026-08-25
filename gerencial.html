@@ -1147,7 +1147,7 @@ function renderTituloDetalhe(c){
      <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
      <button class="btn ghost" style="margin-left:8px" onclick='gerarDossie("${t.id}")'>🧾 Dossiê (PDF)</button>
    </div>
-   <div class="card"><h3>Produtos da nota</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
+   <div class="card"><h3>${t.tipo_doc==='NFSe'?'Serviço da nota':'Produtos da nota'}</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
   toggleRateio();
   carregarPagamento(t.nota_chave).then(pg=>{
     const ps=pg.parcelas||[];
@@ -1173,7 +1173,7 @@ function renderTituloDetalhe(c){
   carregarItens(t.nota_chave).then(items=>{
     const box=document.getElementById('fin-itens');
     const q=v=>(v!==''&&v!=null&&!isNaN(v))?Number(v).toLocaleString('pt-BR',{maximumFractionDigits:4}):esc(v||'');
-    if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Cód.</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.codigo||'—')}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td>${esc(it.unidade||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num money">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted">Nota sem itens detalhados.</div>';
+    if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Cód.</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.codigo||'—')}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td>${esc(it.unidade||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num money">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : (t.descricao? `${t.natureza?`<div style="font-weight:700;color:var(--verde);margin-bottom:6px">${esc(t.natureza)}</div>`:''}<p style="white-space:pre-wrap;font-size:13.5px">${esc(t.descricao)}</p>` : '<div class="muted">Nota sem itens nem descrição do serviço.</div>');
     const ri=document.getElementById('rateio-itens');
     if(ri) ri.innerHTML=items.map((it,i)=>{ const r=(l.rateio&&l.rateio[i])||null; const pre=r?((r.plano_codigo||'')+' — '+(r.plano_descricao||'')):''; return `<div class="field"><label>${esc(it.descricao||('Item '+(i+1)))} · ${fmtBRL(it.valor_total)}</label><input id="lc_plano_${i}" list="planos-dl" value="${esc(pre.trim()==='—'?'':pre)}" placeholder="plano de contas"></div>`; }).join('');
   }).catch(()=>{ const box=document.getElementById('fin-itens'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar os produtos.</div>'; });
@@ -1267,7 +1267,7 @@ async function gerarDossie(tituloId){
     <div class="lin"><span>Plano de contas</span><b>${esc(planoTxt(l))}</b></div>
     <div class="lin"><span>Propriedade</span><b>${esc(l.propriedade_nome||'—')}</b></div>
     <div class="lin"><span>Valor total</span><b>${fmtBRL(t.valor)}</b></div>
-    ${items.length?`<h2>Itens da nota</h2><table><thead><tr><th>#</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table>`:''}
+    ${items.length?`<h2>Itens da nota</h2><table><thead><tr><th>#</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table>`:(t.descricao?`<h2>${esc(t.natureza||'Serviço')}</h2><div class="box"><p style="white-space:pre-wrap">${esc(t.descricao)}</p></div>`:'')}
     <h2>Boleto</h2>
     <div class="box"><div class="lin"><span>Vencimento</span><b>${l.vencimento?fmtDate(l.vencimento):'—'}</b></div><div class="lin"><span>Valor</span><b>${fmtBRL(t.valor)}</b></div></div>
     <div class="aviso">O boleto (arquivo do banco/e-mail) ainda não é anexado automaticamente. Quando o robô do SINTEGRA passar a capturar os boletos por e-mail, o PDF será incluído aqui.</div>
