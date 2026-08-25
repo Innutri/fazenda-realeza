@@ -1425,7 +1425,16 @@ function renderConciliacao(c){
      <div id="cc_prev" style="margin-top:10px"></div>
    </div>
    <div class="card">
-     <h3>Movimentos do extrato <span class="muted" style="font-weight:400">(${pend.length} pendente(s) de ${extratos.length})</span></h3>
+     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+       <h3 style="margin:0">Movimentos do extrato <span class="muted" style="font-weight:400">(${pend.length} pendente(s) de ${extratos.length})</span></h3>
+       ${pend.length?`<div style="display:flex;align-items:center;gap:6px">
+         <span class="muted" style="font-weight:600">Janela ±</span>
+         <input id="cc_janela" type="number" min="0" value="5" style="width:60px;padding:6px 8px;border:1px solid var(--linha);border-radius:8px;text-align:center">
+         <span class="muted">dias</span>
+         <button class="btn gold" onclick="conciliarAutomatico()">⚡ Conciliar automático</button>
+       </div>`:''}
+     </div>
+     <p class="muted" style="margin-top:6px">O automático só baixa o que tem <b>valor exato</b> e <b>um único</b> título compatível na janela. Ambíguos e sem correspondência ficam para você conferir na tabela abaixo.</p>
      ${extratos.length?`<div style="overflow-x:auto"><table class="rt"><thead><tr><th>Data</th><th>Conta</th><th>Descrição</th><th class="num">Valor</th><th>Situação</th><th>Conciliar com</th></tr></thead>
        <tbody>${extratos.slice(0,300).map(linhaExtratoHTML).join('')}</tbody></table></div>`:'<div class="empty">Nenhum movimento importado ainda.</div>'}
    </div>`;
@@ -1490,6 +1499,40 @@ async function desconciliar(extId, titId){
     if(titId) await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${titId}`, { pago:false, status:'lancado', data_pagamento:null, valor_pago:null, extrato_id:null });
     await recarregarTitulos(); L.extratos=await lerExtratos(); render();
   }catch(err){ alert('Erro: '+(err.message||err)); }
+}
+// candidatos a um movimento: mesmo sinal(tipo), não pago, valor exato, dentro da janela de dias
+function candidatosTitulo(e, win, usados){
+  const alvoTipo = Number(e.valor)<0?'pagar':'receber';
+  const alvo=Math.abs(Number(e.valor));
+  const ed=new Date(String(e.data).slice(0,10));
+  return titulosFiscais().filter(t=>{
+    if(t.tipo_titulo!==alvoTipo) return false;
+    if(tituloPago(t)) return false;
+    if(usados && usados.has(t.id)) return false;
+    if(Math.abs(Number(t.valor||0)-alvo)>=0.02) return false;
+    const ref=t.vencimento||t.data_emissao;
+    if(win!=null && ref){ const dd=Math.abs((ed-new Date(String(ref).slice(0,10)))/86400000); if(dd>win) return false; }
+    return true;
+  });
+}
+async function conciliarAutomatico(){
+  const winEl=document.getElementById('cc_janela'); const win=Math.max(0, parseInt(winEl&&winEl.value)||5);
+  const pend=(L.extratos||[]).filter(e=>!e.conciliado);
+  if(!pend.length){ alert('Não há movimentos pendentes para conciliar.'); return; }
+  const usados=new Set(); const fila=[]; let ambiguos=0, semmatch=0;
+  pend.forEach(e=>{ const cs=candidatosTitulo(e, win, usados); if(cs.length===1){ usados.add(cs[0].id); fila.push({e, t:cs[0]}); } else if(cs.length>1){ ambiguos++; } else { semmatch++; } });
+  if(!fila.length){ alert(`Nenhum movimento teve título ÚNICO compatível (valor exato, ±${win} dias).\n${ambiguos} ficaram ambíguos (mais de um título com o mesmo valor) e ${semmatch} sem correspondência. Concilie manualmente.`); return; }
+  if(!confirm(`Conciliar automaticamente ${fila.length} movimento(s) com correspondência única (valor exato, ±${win} dias)?\nOs demais (${ambiguos} ambíguos, ${semmatch} sem match) ficam para conferência manual.`)) return;
+  let ok=0, err=0;
+  for(const {e,t} of fila){
+    try{
+      await reqWrite('PATCH', `/rest/v1/gestao_extratos?id=eq.${e.id}`, { conciliado:true, titulo_id:t.id });
+      await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${t.id}`, { pago:true, status:'pago', data_pagamento:e.data, valor_pago:Math.abs(Number(e.valor)), conta_ref:e.conta_ref, extrato_id:e.id, lancado_em:new Date().toISOString() });
+      ok++;
+    }catch(_){ err++; }
+  }
+  await recarregarTitulos(); L.extratos=await lerExtratos(); render();
+  alert(`Conciliação automática concluída: ${ok} baixado(s)${err?`, ${err} com erro`:''}.\nRestaram ${ambiguos} ambíguo(s) e ${semmatch} sem match para conferência manual.`);
 }
 
 function veiculoDaPosicaoG(vs,pos){ let acc=0; for(let k=0;k<(vs||[]).length;k++){ acc+=(vs[k].capacidade||0); if(pos<acc) return k; } return Math.max(0,(vs||[]).length-1); }
