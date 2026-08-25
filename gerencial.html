@@ -1420,7 +1420,8 @@ function renderConciliacao(c){
        <div class="field"><label>Conta bancária</label><select id="cc_conta">${contaOptions('')}</select></div>
        <div class="field"><label>Formato aceito</label><input value="OFX do banco  ou  CSV: Data;Descrição;Valor" disabled></div>
      </div>
-     <div class="field" style="margin-top:8px"><label>Cole o extrato (OFX ou CSV — um movimento por linha, valor negativo = saída)</label><textarea id="cc_txt" rows="5" placeholder="01/08/2026;PAGto FORNECEDOR X;-1234,56&#10;03/08/2026;RECEBIMENTO Y;2000,00"></textarea></div>
+     <div class="field" style="margin-top:8px"><label>📎 Anexar arquivo do banco (.ofx / .csv)</label><input type="file" id="cc_file" accept=".ofx,.qfx,.csv,.txt" onchange="lerArquivoExtrato(this)" style="padding:8px;border:1px dashed var(--linha);border-radius:8px;background:#fff"></div>
+     <div class="field" style="margin-top:8px"><label>…ou cole o extrato (OFX ou CSV: Data;Descrição;Valor — valor negativo = saída)</label><textarea id="cc_txt" rows="5" placeholder="01/08/2026;PAGto FORNECEDOR X;-1234,56&#10;03/08/2026;RECEBIMENTO Y;2000,00"></textarea></div>
      <button class="btn" onclick="importarExtrato()">Pré-visualizar e importar</button>
      <div id="cc_prev" style="margin-top:10px"></div>
    </div>
@@ -1461,6 +1462,17 @@ function linhaExtratoHTML(e){
     <td data-label="Situação">${sit}</td>
     <td data-label="Conciliar com">${acao}</td>
   </tr>`;
+}
+function lerArquivoExtrato(input){
+  const f=input&&input.files&&input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ const ta=document.getElementById('cc_txt'); if(ta) ta.value=r.result;
+    const prev=document.getElementById('cc_prev');
+    const lidos=parseExtrato(r.result||'');
+    if(prev) prev.innerHTML=`<div class="muted">Arquivo “${esc(f.name)}” carregado — ${lidos.length} movimento(s) reconhecido(s). Escolha a conta acima e clique em <b>“Pré-visualizar e importar”</b>.</div>`;
+  };
+  r.onerror=()=>{ alert('Não consegui ler o arquivo. Tente exportar em OFX ou CSV.'); };
+  r.readAsText(f);
 }
 async function importarExtrato(){
   const contaId=(document.getElementById('cc_conta')||{}).value||'';
