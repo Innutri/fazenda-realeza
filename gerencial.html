@@ -245,13 +245,13 @@ async function req(path, comToken){
     x.send();
   });
 }
-async function reqWrite(method, path, body){
+async function reqWrite(method, path, body, prefer){
   const token=await garantirToken();   // escrita como usuário autenticado (necessário p/ tabelas do Sintegra)
   return new Promise((resolve,reject)=>{
     const x=new XMLHttpRequest();
     x.open(method, SB_URL+path, true);
     x.setRequestHeader("apikey",SB_KEY); x.setRequestHeader("Authorization","Bearer "+(token||SB_KEY));
-    x.setRequestHeader("Content-Type","application/json"); x.setRequestHeader("Prefer","return=minimal");
+    x.setRequestHeader("Content-Type","application/json"); x.setRequestHeader("Prefer",prefer||"return=minimal");
     x.timeout=20000;
     x.onload=()=>{ if(x.status>=200&&x.status<300) resolve(true); else reject(new Error("HTTP "+x.status+" "+(x.responseText||""))); };
     x.onerror=()=>reject(new Error("sem internet ou sinal fraco"));
@@ -1406,7 +1406,7 @@ function parseExtrato(txt){
   });
   return out;
 }
-function hashExtrato(contaRef,e){ return [contaRef,e.data,e.valor.toFixed(2),(e.descricao||'').slice(0,40)].join('|'); }
+function hashExtrato(contaRef,e){ const uniq = e.documento? ('fit:'+e.documento) : ((e.descricao||'').slice(0,60)); return [contaRef,e.data,Number(e.valor).toFixed(2),uniq].join('|'); }
 function renderConciliacao(c){
   const contas=(L.contas||[]);
   const extratos=(L.extratos||[]).slice();
@@ -1472,7 +1472,9 @@ function lerArquivoExtrato(input){
     if(prev) prev.innerHTML=`<div class="muted">Arquivo “${esc(f.name)}” carregado — ${lidos.length} movimento(s) reconhecido(s). Escolha a conta acima e clique em <b>“Pré-visualizar e importar”</b>.</div>`;
   };
   r.onerror=()=>{ alert('Não consegui ler o arquivo. Tente exportar em OFX ou CSV.'); };
-  r.readAsText(f);
+  // OFX do Sicoob (Money) vem em latin1/windows-1252 → lê assim p/ não estragar acentos
+  const nome=(f.name||'').toLowerCase();
+  try{ r.readAsText(f, /\.(ofx|qfx)$/.test(nome)?'ISO-8859-1':'UTF-8'); }catch(_){ r.readAsText(f); }
 }
 async function importarExtrato(){
   const contaId=(document.getElementById('cc_conta')||{}).value||'';
@@ -1483,16 +1485,22 @@ async function importarExtrato(){
   const prev=document.getElementById('cc_prev');
   if(!linhas.length){ if(prev) prev.innerHTML='<div class="muted">Não consegui ler nenhum movimento. Confira o formato (OFX ou CSV Data;Descrição;Valor).</div>'; return; }
   const existentes=new Set((L.extratos||[]).map(e=>e.hash).filter(Boolean));
-  const novos=linhas.filter(e=>!existentes.has(hashExtrato(contaRef,e)));
-  if(prev) prev.innerHTML=`<div class="muted">Lidos ${linhas.length} movimento(s); ${novos.length} novo(s) para importar${linhas.length-novos.length?` (${linhas.length-novos.length} já existiam)`:''}.</div>`;
-  if(!novos.length) return;
+  // dedup dentro do próprio arquivo (mesma impressão digital) + contra o que já existe
+  const vistos=new Set(); const novos=[];
+  linhas.forEach(e=>{ const h=hashExtrato(contaRef,e); if(existentes.has(h)||vistos.has(h)) return; vistos.add(h); novos.push({e,h}); });
+  const jaExistiam=linhas.length-novos.length;
+  if(prev) prev.innerHTML=`<div class="muted">Lidos ${linhas.length} movimento(s); ${novos.length} novo(s) para importar${jaExistiam?` (${jaExistiam} repetido(s)/já existente(s) ignorado(s))`:''}.</div>`;
+  if(!novos.length){ alert('Todos os movimentos deste extrato já foram importados.'); return; }
   if(!confirm(`Importar ${novos.length} movimento(s) do extrato para a conta ${contaRef}?`)) return;
   const pid=await lerProdutorId();
-  const body=novos.map(e=>({ produtor_id:pid, origem:'import', conta_ref:contaRef, data:e.data, descricao:e.descricao||null, documento:e.documento||null, valor:e.valor, tipo:e.valor<0?'debito':'credito', conciliado:false, hash:hashExtrato(contaRef,e) }));
+  const antes=(L.extratos||[]).length;
+  const body=novos.map(({e,h})=>({ produtor_id:pid, origem:'import', conta_ref:contaRef, data:e.data, descricao:e.descricao||null, documento:e.documento||null, valor:e.valor, tipo:e.valor<0?'debito':'credito', conciliado:false, hash:h }));
   try{
-    // insere em blocos
-    for(let i=0;i<body.length;i+=100){ await reqWrite('POST', `/rest/v1/gestao_extratos`, body.slice(i,i+100)); }
+    // on_conflict=hash + ignore-duplicates → duplicado é ignorado no banco em vez de derrubar o lote
+    for(let i=0;i<body.length;i+=100){ await reqWrite('POST', `/rest/v1/gestao_extratos?on_conflict=hash`, body.slice(i,i+100), 'resolution=ignore-duplicates,return=minimal'); }
     L.extratos=await lerExtratos(); render();
+    const inseridos=(L.extratos||[]).length-antes;
+    alert(`Extrato importado: ${inseridos} movimento(s) novo(s) na conta ${contaRef}.${jaExistiam?`\n(${jaExistiam} repetido(s) foram ignorados.)`:''}`);
   }catch(e){ alert('Erro ao importar extrato: '+(e.message||e)); }
 }
 async function conciliar(extId, titId){
