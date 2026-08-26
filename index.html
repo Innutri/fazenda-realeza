@@ -56,6 +56,8 @@
   .subtabs.small button{padding:6px 12px;font-size:12px}
 
   .card{background:var(--card);border:1px solid var(--linha);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .card.sexo-femea{background:#fdf2f7;border-color:#f0c4d8}
+  .card.sexo-macho{background:#eef4fd;border-color:#c4d8f0}
   .card h2{margin:0 0 4px;font-size:16px;color:var(--verde-esc)}
   .card h3{margin:0 0 12px;font-size:14px;color:var(--verde);border-bottom:2px solid var(--ouro-cl);padding-bottom:6px;display:inline-block}
   .muted{color:var(--txt2);font-size:12.5px;margin:0 0 14px}
@@ -1100,7 +1102,7 @@ async function salvarTouro(){
 
 function formFemea(){
   $("#cad-form").innerHTML = `
-  <div class="card">
+  <div class="card sexo-femea">
     <h3>Cadastro de Fêmea</h3>
     <p class="muted">Informe o nº da mãe (matriz) para vincular a genealogia — o pai é preenchido a partir da prenhez confirmada da mãe (IATF ou touro).</p>
     <div class="grid">
@@ -1156,7 +1158,7 @@ async function salvarFemea(){
 
 function formMacho(){
   $("#cad-form").innerHTML = `
-  <div class="card">
+  <div class="card sexo-macho">
     <h3>Cadastro de Macho</h3>
     <p class="muted">Se a mãe estiver no banco (nº informado), pai e mãe são trazidos automaticamente.</p>
     <div class="grid">
@@ -1424,6 +1426,7 @@ async function salvarManejo(animalId){
 let compraState=null;   // { n, feitos:[] }
 let embarqueId=null;    // id do lote de abate em montagem
 
+function tintSexo(el, tipo){ if(!el) return; el.classList.remove('sexo-femea','sexo-macho'); if(tipo==='femea') el.classList.add('sexo-femea'); else if(tipo==='macho') el.classList.add('sexo-macho'); }
 function dataNascDeMeses(meses){
   if(meses==null || isNaN(meses)) return null;
   const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-Math.round(meses));
@@ -1454,12 +1457,12 @@ async function telaCompraAnimal(){
   let sug=1; try{ const r=await sb.rpc("proximo_numero_disponivel"); if(r&&r.data) sug=r.data; }catch(_){}
   const usados=new Set(st.feitos.map(f=>f.numero));
   while(usados.has(sug) || LOCAL.animais.some(a=>!a.arquivado&&a.numero===sug)) sug++;
-  app.innerHTML=`<div class="card">
+  app.innerHTML=`<div class="card sexo-macho" id="cmp-card">
     <div class="wizard-head"><button class="voltar" onclick="if(confirm('Sair da compra? Os já cadastrados ficam salvos.')) render()">← Sair</button><h3>🛒 Compra — animal ${idx+1} de ${st.n}</h3></div>
     <div class="prog"><i style="width:${Math.round(idx/st.n*100)}%"></i></div>
     <div class="grid">
       <div class="field"><label>Número</label><input id="cmp_num" type="number" inputmode="numeric" value="${sug}" style="font-size:26px;font-weight:800;text-align:center"></div>
-      <div class="field"><label>Tipo</label><select id="cmp_tipo"><option value="macho">Macho</option><option value="femea">Fêmea</option></select></div>
+      <div class="field"><label>Tipo</label><select id="cmp_tipo" onchange="tintSexo(document.getElementById('cmp-card'), this.value)"><option value="macho">Macho</option><option value="femea">Fêmea</option></select></div>
     </div>
     <div class="field" style="margin-top:8px"><label>Peso (kg)</label><input id="cmp_peso" type="number" step="0.1" inputmode="decimal" placeholder="suba na balança ou digite" style="background:#fff59d;border-color:var(--ouro);border-width:2px;font-size:24px;font-weight:800;text-align:center"></div>
     <div id="cmp_extra">
@@ -1523,6 +1526,22 @@ async function compartilharCompra(){
   try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
   try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
 }
+async function enviarCompraGestao(st){
+  if(st.loteId || st._enviando) return;
+  st._enviando=true;
+  const comPeso=st.feitos.filter(f=>f.peso!=null);
+  const total=comPeso.reduce((s,f)=>s+f.peso,0);
+  const media=comPeso.length?Math.round(total/comPeso.length*10)/10:null;
+  const hoje=new Date().toISOString().slice(0,10), agora=new Date().toISOString();
+  const doc={ tipo:"compra", status:"fechado", gestao_status:"aguardando_financeiro", data_compra:hoje,
+    cabecas:st.feitos.length, peso_total:Math.round(total*10)/10, peso_medio:media,
+    animais:st.feitos.map(f=>({animal_id:f.id, numero:f.numero, tipo:f.tipo, peso:f.peso})), gestao_enviado_em:agora };
+  try{ const { data:novo, error } = await sb.from("lotes").insert(doc);
+    if(!error && novo && novo[0]){ st.loteId=novo[0].id; toast("Compra enviada ao app de gestão (financeiro).","ok");
+      const el=document.getElementById("compra-envio"); if(el) el.innerHTML='<div class="alerta-mini ok">📤 Enviado ao app de gestão — <b>aguardando o preço/pagamento</b> lá no financeiro.</div>';
+    } }catch(_){}
+  st._enviando=false;
+}
 function telaCompraResumo(){
   const st=compraState; if(!st) return render();
   const comPeso=st.feitos.filter(f=>f.peso!=null);
@@ -1541,12 +1560,14 @@ function telaCompraResumo(){
       <div style="overflow-x:auto;margin-top:12px"><table class="rt"><thead><tr><th>Nº</th><th>Tipo</th><th>Peso</th></tr></thead>
       <tbody>${st.feitos.map(f=>`<tr><td data-label="Nº"><b>${f.numero}</b></td><td data-label="Tipo">${f.tipo}</td><td data-label="Peso">${f.peso!=null?f.peso+" kg":"—"}</td></tr>`).join("")}</tbody></table></div>
     </div>
+    <div id="compra-envio" class="no-print" style="margin-top:10px">${st.loteId?'<div class="alerta-mini ok">📤 Enviado ao app de gestão — <b>aguardando o preço/pagamento</b> lá no financeiro.</div>':'<div class="alerta-mini">📤 Enviando ao app de gestão…</div>'}</div>
     <div class="actions no-print" style="flex-wrap:wrap;gap:8px">
       <button class="btn" style="width:auto" onclick="compartilharCompra()">📲 Compartilhar (WhatsApp)</button>
       <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
       <button class="btn sec" style="width:auto" onclick="render()">Concluir</button>
     </div>
   </div>`;
+  enviarCompraGestao(st);
 }
 
 // ---------- VENDA PARA ABATE ----------

@@ -1957,11 +1957,53 @@ async function concluirVenda(id){
     await recarregarLotes(); render();
   }catch(e){ alert("Erro ao concluir: "+(e.message||e)); }
 }
+function cardCompraAguardando(l){
+  return `<div class="card">
+    <h3>🛒 Compra do campo <span class="muted" style="font-weight:400">· ${fmtDate(l.data_compra)}</span></h3>
+    <div class="muted" style="margin:4px 0 8px">Cabeças <b>${l.cabecas??'—'}</b> · Peso total <b>${l.peso_total!=null?l.peso_total+' kg':'—'}</b> · Peso médio <b>${l.peso_medio!=null?l.peso_medio+' kg':'—'}</b></div>
+    <div class="grid">
+      <div class="field"><label>Fornecedor / vendedor</label><input id="ca_forn_${l.id}"></div>
+      <div class="field"><label>Forma de preço</label><select id="ca_modo_${l.id}" onchange="calcCompraLote('${l.id}')"><option value="kg">Por kg (peso vivo)</option><option value="cab">Por cabeça</option></select></div>
+      <div class="field"><label>Preço (R$/kg ou R$/cabeça)</label><input id="ca_preco_${l.id}" type="number" step="0.01" oninput="calcCompraLote('${l.id}')"></div>
+      <div class="field"><label>Valor total (R$)</label><input id="ca_total_${l.id}" type="number" step="0.01" oninput="this.dataset.man='1'" placeholder="calculado"></div>
+      <div class="field"><label>Vencimento / pagamento</label><input id="ca_venc_${l.id}" type="date"></div>
+      <div class="field"><label>Nota fiscal (nº ou chave)</label><input id="ca_nf_${l.id}" placeholder="opcional"></div>
+    </div>
+    <div class="muted" id="ca_prev_${l.id}" style="margin:2px 0 8px"></div>
+    <button class="btn" onclick='concluirCompraLote("${l.id}")'>Concluir compra → gera a pagar</button>
+  </div>`;
+}
+function calcCompraLote(id){
+  const l=(L.lotes||[]).find(x=>x.id===id); if(!l) return; const g=x=>document.getElementById(x+'_'+id);
+  const modo=(g('ca_modo')||{}).value||'kg'; const preco=parseFloat((g('ca_preco')||{}).value)||0;
+  const total = modo==='kg'? (l.peso_total||0)*preco : (l.cabecas||0)*preco;
+  const tEl=g('ca_total'); if(tEl && tEl.dataset.man!=='1') tEl.value= total?Math.round(total*100)/100:'';
+  const prev=g('ca_prev'); if(prev) prev.innerHTML= total? (modo==='kg'?`${l.peso_total} kg × ${fmtBRL(preco)}/kg`:`${l.cabecas} cab × ${fmtBRL(preco)}/cab`)+` = <b>${fmtBRL(total)}</b>`:'';
+}
+async function concluirCompraLote(id){
+  const l=(L.lotes||[]).find(x=>x.id===id); if(!l) return; const g=x=>document.getElementById(x+'_'+id);
+  const forn=((g('ca_forn')||{}).value||'').trim(); const modo=(g('ca_modo')||{}).value||'kg'; const preco=parseFloat((g('ca_preco')||{}).value)||null;
+  let total=parseFloat((g('ca_total')||{}).value)||null; if(total==null){ total= modo==='kg'? (l.peso_total&&preco?l.peso_total*preco:null):(l.cabecas&&preco?l.cabecas*preco:null); }
+  if(!total){ alert('Informe o preço (R$/kg ou R$/cabeça).'); return; }
+  const venc=(g('ca_venc')||{}).value||null; const nf=((g('ca_nf')||{}).value||'').trim()||null;
+  const doc={ origem:'avulso', categoria:'compra_animais', lote_id:id, tipo_titulo:'pagar', contraparte_nome:forn||'Compra de animais',
+    descricao:`Compra de animais — ${l.cabecas||'?'} cab (${modo==='cab'?'por cabeça':'por kg'})${nf?' · NF '+nf:''}`, valor:Math.round(total*100)/100,
+    data_emissao:new Date().toISOString().slice(0,10), vencimento:venc, compra_cabecas:l.cabecas, compra_modo:modo, compra_peso:l.peso_total, compra_preco:preco, rateio_tipo:'total', rateio:[], pago:false, atualizado_em:new Date().toISOString() };
+  try{
+    const ex=(L.gestao_lancamentos||[]).find(x=>x.lote_id===id && x.categoria==='compra_animais');
+    if(ex) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${ex.id}`, {doc}); else await reqWrite('POST','/rest/v1/gestao_lancamentos',{doc});
+    const nl=Object.assign({},l); delete nl.id; nl.gestao_status='concluido'; nl.gestao_valor_total=Math.round(total*100)/100; nl.gestao_fornecedor=forn||null; nl.gestao_nf=nf; nl.gestao_concluido_em=new Date().toISOString();
+    await reqWrite('PATCH', `/rest/v1/lotes?id=eq.${id}`, {doc:nl});
+    await recarregarLancamentos(); await recarregarLotes(); render();
+  }catch(e){ alert('Erro ao concluir compra: '+(e.message||e)); }
+}
 function renderComercialCompra(){
   const body=document.getElementById('com-body'); if(!body) return;
+  const aguard=(L.lotes||[]).filter(l=>l && l.tipo==='compra' && l.gestao_status==='aguardando_financeiro');
   const compras=(L.gestao_lancamentos||[]).filter(l=>l.categoria==='compra_animais').sort((a,b)=>String(b.data_emissao||'').localeCompare(String(a.data_emissao||'')));
   body.innerHTML=`
-  <div class="card"><h3>Registrar compra de animais</h3>
+  ${aguard.length? `<div class="card" style="background:#fff8e6;border-color:#e6cf8a"><b>${aguard.length}</b> compra(s) vinda(s) do app de campo aguardando o preço.</div>`+aguard.map(cardCompraAguardando).join(''):''}
+  <div class="card"><h3>Registrar compra ${aguard.length?'avulsa ':''}de animais</h3>
     <div class="pgsub" style="margin:-4px 0 10px">Animais descarregados e pesados na fazenda. Pague o lote por kg (peso vivo) ou por cabeça — gera uma conta a pagar.</div>
     <div class="grid">
       <div class="field"><label>Fornecedor / vendedor</label><input id="cp_forn"></div>
