@@ -2400,26 +2400,27 @@ function renderEstImport(){
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function estImportSet(i,val){ const st=window.__estImport; if(!st||!st.linhas[i]) return; const ln=st.linhas[i]; if(val==='__novo__'){ ln.action='novo'; ln.matchId=''; ln.via=''; } else { ln.action='vincular'; ln.matchId=val; if(!ln.via) ln.via='manual'; } }
-function estCancelarImport(){ window.__estImport=null; const box=document.getElementById('est-import'); if(box) box.innerHTML=''; }
+function estCancelarImport(){ const st=window.__estImport; const bid=(st&&st.boxId)||'est-import'; window.__estImport=null; const box=document.getElementById(bid); if(box) box.innerHTML=''; }
 async function estConfirmarEntrada(){
   const st=window.__estImport; if(!st) return;
   const t=titulosFiscais().find(x=>x.id===st.tituloId); if(!t){ alert('Nota não encontrada.'); return; }
   const lanc=lancDeTitulo(t.id)||{};
-  const planoDoItem=it=>{ if(lanc.rateio_tipo==='produto' && Array.isArray(lanc.rateio)){ const r=lanc.rateio[(it.item||0)-1]; if(r) return {codigo:r.plano_codigo||null, descricao:r.plano_descricao||null}; }
+  const planoDoItem=(it,idx)=>{ if(lanc.rateio_tipo==='produto' && Array.isArray(lanc.rateio)){ const r=lanc.rateio[idx]; if(r) return {codigo:r.plano_codigo||null, descricao:r.plano_descricao||null}; }
     return {codigo:lanc.plano_codigo||null, descricao:lanc.plano_descricao||null}; };
+  const itNome=it=>((it.descricao||'').trim() || ('Item '+(it.item||'?')+' (sem descrição)'));
   const dataMov=t.data_emissao?String(t.data_emissao).slice(0,10):isoLocal(new Date());
   try{
     // Passo A: criar produtos novos (sem duplicar dentro do lote)
     const criados=new Set();
-    for(const ln of st.linhas){ if(ln.jaImp||ln.action==='vincular') continue;
-      const it=ln.it; const nm=(it.descricao||'').trim(); const key=normTxt(nm)||('cod:'+String(it.codigo||''));
+    for(let i=0;i<st.linhas.length;i++){ const ln=st.linhas[i]; if(ln.jaImp||ln.action==='vincular') continue;
+      const it=ln.it; const nm=itNome(it); const key=normTxt(nm);
       if(criados.has(key)) continue; criados.add(key);
-      if(nm && (L.estoque_produtos||[]).some(p=>normTxt(p.nome)===normTxt(nm))) continue;
-      const pl=planoDoItem(it); const ck=codigoKey(st.emitenteDoc,it.codigo);
-      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm||'(sem descrição)', categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, plano_codigo:pl.codigo, plano_descricao:pl.descricao, apelidos:nm?[nm]:[], codigos:ck?[ck]:[], criado_em:new Date().toISOString(), origem_nota:t.nota_chave }});
+      if((L.estoque_produtos||[]).some(p=>normTxt(p.nome)===key)) continue;
+      const pl=planoDoItem(it,i); const ck=codigoKey(st.emitenteDoc,it.codigo);
+      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm, categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, plano_codigo:pl.codigo, plano_descricao:pl.descricao, apelidos:[nm], codigos:ck?[ck]:[], criado_em:new Date().toISOString(), origem_nota:t.nota_chave }});
     }
     await recarregarEstoque();
-    const resolvePid=ln=>{ if(ln.action==='vincular'&&ln.matchId) return ln.matchId; const nm=(ln.it.descricao||'').trim(); const p=(L.estoque_produtos||[]).find(x=>nm&&normTxt(x.nome)===normTxt(nm)); return p?p.id:''; };
+    const resolvePid=ln=>{ if(ln.action==='vincular'&&ln.matchId) return ln.matchId; const nm=itNome(ln.it); const p=(L.estoque_produtos||[]).find(x=>normTxt(x.nome)===normTxt(nm)); return p?p.id:''; };
     // Passo B: aprender apelidos/códigos nos produtos vinculados
     const learn={};
     for(const ln of st.linhas){ if(ln.jaImp||ln.action!=='vincular'||!ln.matchId) continue;
@@ -2434,7 +2435,7 @@ async function estConfirmarEntrada(){
     const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
     let n=0;
     for(const ln of st.linhas){ if(ln.jaImp) continue; const it=ln.it; if(jaImp.has(String(it.item))) continue;
-      const nm=(it.descricao||'').trim(); const pid=resolvePid(ln); if(!pid) continue;
+      const nm=itNome(it); const pid=resolvePid(ln); if(!pid) continue;
       await reqWrite('POST','/rest/v1/estoque_mov',{doc:{ produto_id:pid, tipo:'entrada', qtd:Number(it.quantidade||0), valor_unit:(it.valor_unit!=null?Number(it.valor_unit):null), data:dataMov, origem:`NF ${(t.tipo_doc||'')} ${(t.numero||'')}`.trim(), nota_chave:t.nota_chave, item:it.item, item_desc:nm }}); n++; }
     window.__estImport=null;
     await recarregarEstoque(); render();
