@@ -2069,6 +2069,19 @@ function estOpcoesProduto(sel){ let o='<option value="">— escolha o produto �
 function estOpcoesTitulo(){ let o='<option value="">— escolha a nota —</option>'; titulosFiscais().filter(t=>t.tipo_titulo==='pagar' && t.nota_chave).slice(0,300).forEach(t=>{ o+=`<option value="${esc(t.id)}">${esc(t.contraparte_nome||'')} · ${esc((t.tipo_doc||'')+' '+(t.numero||''))} · ${fmtBRL(t.valor)}</option>`; }); return o; }
 function estFiltro(cat){ estCat=cat; render(); }
 function estToggleValor(){ const t=(document.getElementById('em_tipo')||{}).value; const w=document.getElementById('em_vwrap'); if(w) w.style.display=t==='saida'?'none':''; }
+/* --- de-para / correspondência de produtos (mesmo item, descrições diferentes por loja) --- */
+function normTxt(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim(); }
+function codigoKey(emitenteDoc,codigo){ const c=String(codigo||'').trim(); if(!c) return null; return String(emitenteDoc||'').replace(/\D/g,'')+'|'+c.toLowerCase(); }
+function apelidosDe(p){ return Array.isArray(p.apelidos)?p.apelidos:[]; }
+function codigosDe(p){ return Array.isArray(p.codigos)?p.codigos:[]; }
+function matchProdutoItem(it,emitenteDoc){
+  const prods=L.estoque_produtos||[];
+  const ck=codigoKey(emitenteDoc,it.codigo);
+  if(ck){ const byCod=prods.find(p=>codigosDe(p).includes(ck)); if(byCod) return {produto:byCod, via:'codigo'}; }
+  const nd=normTxt(it.descricao);
+  if(nd){ const byNome=prods.find(p=>normTxt(p.nome)===nd || apelidosDe(p).some(a=>normTxt(a)===nd)); if(byNome) return {produto:byNome, via:'descricao'}; }
+  return null;
+}
 function renderEstoque(c){
   const prods=(L.estoque_produtos||[]).slice();
   const abaixo=prods.filter(p=>Number(p.estoque_minimo||0)>0 && saldoProduto(p.id)<=Number(p.estoque_minimo)).length;
@@ -2110,9 +2123,10 @@ function renderEstoque(c){
    </div>
    <div class="card"><h3>📥 Entrada pela nota fiscal <span class="muted" style="font-weight:400">(compras a pagar)</span></h3>
      <div class="field"><label>Escolha a nota (fornecedor)</label><select id="en_tit">${estOpcoesTitulo()}</select></div>
-     <button class="btn gold" onclick="estImportarNota()" style="margin-top:8px">Puxar itens da nota e dar entrada</button>
-     <p class="muted" style="margin-top:6px">Cria/atualiza os produtos pelos itens da nota e lança a entrada com a quantidade e o valor. Depois você ajusta a categoria de cada um.</p>
+     <button class="btn gold" onclick="estCarregarNota()" style="margin-top:8px">Conferir itens da nota</button>
+     <p class="muted" style="margin-top:6px">O app tenta reconhecer cada item pelo código do fornecedor ou pela descrição. Itens novos você cadastra na hora; itens que são o mesmo produto de outra loja você vincula a um já existente — e o app aprende o "apelido" pra próxima nota entrar sozinha.</p>
    </div>
+   <div id="est-import"></div>
    <div class="card">
      <div class="finabas" style="margin-bottom:8px"><button class="${!estCat?'on':''}" onclick="estFiltro('')">Todas</button>${EST_CATS.map(catBtn).join('')}</div>
      <h3>Produtos em estoque <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
@@ -2134,6 +2148,25 @@ function estVerProduto(id){ const p=(L.estoque_produtos||[]).find(x=>x.id===id);
   box.innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">📦 ${esc(p.nome)} — movimentos <span class="muted" style="font-weight:400">(saldo ${(Math.round(saldoProduto(id)*1000)/1000).toString().replace('.',',')} ${esc(p.unidade||'')})</span></h3><button class="btn ghost" onclick='excluirProdutoEstoque("${id}")'>Excluir produto</button></div>
    <div class="grid" style="margin:8px 0"><div class="field" style="grid-column:1 / span 2"><label>Plano de contas (classificação)</label><input id="ed_plano_${id}" list="est-planos-dl2" value="${esc(p.plano_codigo?((p.plano_codigo||'')+' — '+(p.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div><div class="field" style="align-self:end"><button class="btn" onclick='salvarPlanoProduto("${id}")'>Salvar plano</button></div></div>
    <datalist id="est-planos-dl2">${planoOptions()}</datalist>
+   <div style="border-top:1px solid #eee;margin:6px 0;padding-top:8px">
+     <div style="font-weight:600;margin-bottom:4px">Apelidos <span class="muted" style="font-weight:400">(como este item vem nas notas de cada loja)</span></div>
+     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+       ${apelidosDe(p).length?apelidosDe(p).map((a,i)=>`<span class="tag" style="background:#eef4fd;color:#2b5fa8">${esc(a)} <a href="#" onclick='estRemApelido("${id}",${i});return false' style="text-decoration:none;color:#b23b3b">✕</a></span>`).join(''):'<span class="muted">nenhum apelido ainda</span>'}
+     </div>
+     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+       <input id="ap_new_${id}" placeholder="adicionar apelido (descrição de outra loja)" style="flex:1;min-width:200px">
+       <button class="btn ghost" style="padding:4px 10px" onclick='estAddApelido("${id}")'>Adicionar</button>
+     </div>
+     ${codigosDe(p).length?`<div class="muted" style="font-size:12px;margin-top:6px">Códigos de fornecedor guardados: ${codigosDe(p).length}</div>`:''}
+   </div>
+   <div style="border-top:1px solid #eee;margin:6px 0;padding-top:8px">
+     <div style="font-weight:600;margin-bottom:4px">Mesclar duplicado</div>
+     <div class="muted" style="font-size:12px;margin-bottom:6px">Se este produto foi cadastrado duas vezes, escolha o outro produto para juntar tudo aqui (movimentos + apelidos). O outro será excluído.</div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap">
+       <select id="merge_${id}" style="flex:1;min-width:200px"><option value="">— escolha o produto a juntar aqui —</option>${(L.estoque_produtos||[]).filter(x=>x.id!==id).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(x=>`<option value="${esc(x.id)}">${esc(x.nome)}${x.categoria?(' · '+esc(x.categoria)):''}</option>`).join('')}</select>
+       <button class="btn ghost" style="padding:4px 10px" onclick='estMesclarProduto("${id}")'>Mesclar aqui</button>
+     </div>
+   </div>
    ${ms.length?`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Tipo</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th>Origem / Obs</th><th></th></tr></thead><tbody>${ms.map(m=>`<tr><td>${m.data?fmtDate(m.data):'—'}</td><td>${esc(m.tipo)}</td><td class="num">${(Number(m.qtd||0)).toString().replace('.',',')}</td><td class="num">${m.valor_unit!=null?fmtBRL(m.valor_unit):'—'}</td><td>${esc(m.origem||m.obs||'—')}</td><td><button class="btn ghost" style="padding:3px 7px" onclick='excluirMovEstoque("${m.id}")'>✕</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Sem movimentos.</div>'}
   </div>`;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -2160,28 +2193,110 @@ async function salvarMovEstoque(){ const v=id=>{const e=document.getElementById(
 async function excluirMovEstoque(id){ if(!confirm('Excluir este movimento?')) return; try{ await reqWrite('DELETE','/rest/v1/estoque_mov?id=eq.'+id); await recarregarEstoque(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
 async function excluirProdutoEstoque(id){ if(!confirm('Excluir o produto e todos os seus movimentos?')) return;
   try{ for(const m of movsDe(id)){ await reqWrite('DELETE','/rest/v1/estoque_mov?id=eq.'+m.id); } await reqWrite('DELETE','/rest/v1/estoque_produtos?id=eq.'+id); await recarregarEstoque(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
-async function estImportarNota(){
+async function estAddApelido(id){ const el=document.getElementById('ap_new_'+id); const v=el?el.value.trim():''; if(!v) return;
+  const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return; const ap=apelidosDe(p).slice();
+  if(normTxt(v)===normTxt(p.nome)||ap.some(a=>normTxt(a)===normTxt(v))){ alert('Esse apelido já existe.'); return; }
+  ap.push(v); const doc=Object.assign({},p); delete doc.id; doc.apelidos=ap;
+  try{ await reqWrite('PATCH','/rest/v1/estoque_produtos?id=eq.'+id,{doc}); await recarregarEstoque(); estVerProduto(id); }catch(e){ alert('Erro: '+(e.message||e)); } }
+async function estRemApelido(id,idx){ const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return; const ap=apelidosDe(p).slice(); if(idx<0||idx>=ap.length) return; ap.splice(idx,1);
+  const doc=Object.assign({},p); delete doc.id; doc.apelidos=ap;
+  try{ await reqWrite('PATCH','/rest/v1/estoque_produtos?id=eq.'+id,{doc}); await recarregarEstoque(); estVerProduto(id); }catch(e){ alert('Erro: '+(e.message||e)); } }
+async function estMesclarProduto(destId){
+  const sel=document.getElementById('merge_'+destId); const srcId=sel?sel.value:''; if(!srcId){ alert('Escolha o produto a mesclar.'); return; }
+  if(srcId===destId){ alert('Selecione um produto diferente.'); return; }
+  const dest=(L.estoque_produtos||[]).find(x=>x.id===destId); const src=(L.estoque_produtos||[]).find(x=>x.id===srcId); if(!dest||!src) return;
+  if(!confirm(`Mesclar "${src.nome}" dentro de "${dest.nome}"?\nTodos os movimentos e apelidos passam para "${dest.nome}" e "${src.nome}" será excluído.`)) return;
+  try{
+    for(const m of movsDe(srcId)){ const d=Object.assign({},m); delete d.id; d.produto_id=destId; await reqWrite('PATCH','/rest/v1/estoque_mov?id=eq.'+m.id,{doc:d}); }
+    const ap=apelidosDe(dest).slice(); const cds=codigosDe(dest).slice();
+    [src.nome].concat(apelidosDe(src)).forEach(a=>{ if(a&&normTxt(a)!==normTxt(dest.nome)&&!ap.some(x=>normTxt(x)===normTxt(a))) ap.push(a); });
+    codigosDe(src).forEach(c=>{ if(!cds.includes(c)) cds.push(c); });
+    const doc=Object.assign({},dest); delete doc.id; doc.apelidos=ap; doc.codigos=cds;
+    await reqWrite('PATCH','/rest/v1/estoque_produtos?id=eq.'+destId,{doc});
+    await reqWrite('DELETE','/rest/v1/estoque_produtos?id=eq.'+srcId);
+    await recarregarEstoque(); render(); estVerProduto(destId);
+  }catch(e){ alert('Erro ao mesclar: '+(e.message||e)); }
+}
+async function estCarregarNota(){
   const tid=(document.getElementById('en_tit')||{}).value; if(!tid){ alert('Escolha a nota.'); return; }
   const t=titulosFiscais().find(x=>x.id===tid); if(!t) return;
   let itens=[]; try{ itens=await carregarItens(t.nota_chave)||[]; }catch(_){}
   if(!itens.length){ alert('Essa nota não tem itens detalhados (pode ser nota de serviço/NFSe).'); return; }
-  if(!confirm(`Dar entrada de ${itens.length} item(ns) da nota de ${t.contraparte_nome||''} no estoque?`)) return;
+  const emitenteDoc=t.contraparte_doc||'';
+  const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
+  const linhas=itens.map(it=>{ const m=matchProdutoItem(it,emitenteDoc);
+    return { it, matchId:m?m.produto.id:'', via:m?m.via:'', action:m?'vincular':'novo', jaImp:jaImp.has(String(it.item)) }; });
+  window.__estImport={ tituloId:tid, notaChave:t.nota_chave, emitenteDoc, contraparte:t.contraparte_nome||'', linhas };
+  renderEstImport();
+}
+function renderEstImport(){
+  const box=document.getElementById('est-import'); if(!box) return;
+  const st=window.__estImport; if(!st){ box.innerHTML=''; return; }
+  const opts=pid=>{ let o='<option value="__novo__">➕ Criar produto novo</option>'; (L.estoque_produtos||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).forEach(p=>{ o+=`<option value="${esc(p.id)}"${p.id===pid?' selected':''}>${esc(p.nome)}${p.categoria?(' · '+esc(p.categoria)):''}</option>`; }); return o; };
+  const rows=st.linhas.map((ln,i)=>{ const it=ln.it; const desc=esc(it.descricao||'—'); const qt=(Number(it.quantidade||0)).toString().replace('.',',');
+    const viaTag = ln.via==='codigo'?'<span class="tag" style="background:#e1f4e6;color:#2e7d54">código</span>' : ln.via==='descricao'?'<span class="tag" style="background:#eef4fd;color:#2b5fa8">descrição</span>':'<span class="tag" style="background:#fff3e0;color:#b26a00">novo</span>';
+    if(ln.jaImp) return `<tr style="opacity:.5"><td>${desc}<br><span class="muted" style="font-size:12px">cód. ${esc(it.codigo||'—')}</span></td><td class="num">${qt} ${esc(it.unidade||'')}</td><td class="num">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td colspan="2"><span class="tag" style="background:#eee;color:#666">já lançado</span></td></tr>`;
+    const sel = ln.action==='novo' ? '' : ln.matchId;
+    return `<tr>
+      <td>${desc}<br><span class="muted" style="font-size:12px">cód. ${esc(it.codigo||'—')}</span></td>
+      <td class="num">${qt} ${esc(it.unidade||'')}</td>
+      <td class="num">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td>
+      <td>${viaTag}</td>
+      <td><select onchange="estImportSet(${i},this.value)">${opts(sel)}</select></td>
+    </tr>`; }).join('');
+  const pend=st.linhas.filter(l=>!l.jaImp).length;
+  box.innerHTML=`<div class="card">
+    <h3>Conferir itens — ${esc(st.contraparte)}</h3>
+    <p class="muted" style="margin-top:0"><b style="color:#2e7d54">Verde</b> = reconhecido pelo código do fornecedor · <b style="color:#2b5fa8">Azul</b> = pela descrição · <b style="color:#b26a00">Laranja</b> = item novo. Ao vincular um item a um produto que já existe, a descrição e o código desta loja ficam guardados como apelido — na próxima nota entra sozinho.</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>Item da nota</th><th class="num">Qtd</th><th class="num">V.Unit</th><th>Reconhecido</th><th>Lançar em</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn gold" onclick="estConfirmarEntrada()"${pend?'':' disabled'}>Confirmar entrada (${pend})</button>
+      <button class="btn ghost" onclick="estCancelarImport()">Cancelar</button>
+    </div>
+  </div>`;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function estImportSet(i,val){ const st=window.__estImport; if(!st||!st.linhas[i]) return; const ln=st.linhas[i]; if(val==='__novo__'){ ln.action='novo'; ln.matchId=''; ln.via=''; } else { ln.action='vincular'; ln.matchId=val; if(!ln.via) ln.via='manual'; } }
+function estCancelarImport(){ window.__estImport=null; const box=document.getElementById('est-import'); if(box) box.innerHTML=''; }
+async function estConfirmarEntrada(){
+  const st=window.__estImport; if(!st) return;
+  const t=titulosFiscais().find(x=>x.id===st.tituloId); if(!t){ alert('Nota não encontrada.'); return; }
   const lanc=lancDeTitulo(t.id)||{};
   const planoDoItem=it=>{ if(lanc.rateio_tipo==='produto' && Array.isArray(lanc.rateio)){ const r=lanc.rateio[(it.item||0)-1]; if(r) return {codigo:r.plano_codigo||null, descricao:r.plano_descricao||null}; }
     return {codigo:lanc.plano_codigo||null, descricao:lanc.plano_descricao||null}; };
+  const dataMov=t.data_emissao?String(t.data_emissao).slice(0,10):isoLocal(new Date());
   try{
-    const existentesNome=new Set((L.estoque_produtos||[]).map(p=>(p.nome||'').toLowerCase()));
-    for(const it of itens){ const nm=(it.descricao||'').trim(); if(nm && !existentesNome.has(nm.toLowerCase())){ existentesNome.add(nm.toLowerCase()); const pl=planoDoItem(it);
-      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm, categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, plano_codigo:pl.codigo, plano_descricao:pl.descricao, criado_em:new Date().toISOString(), origem_nota:t.nota_chave }}); } }
+    // Passo A: criar produtos novos (sem duplicar dentro do lote)
+    const criados=new Set();
+    for(const ln of st.linhas){ if(ln.jaImp||ln.action==='vincular') continue;
+      const it=ln.it; const nm=(it.descricao||'').trim(); const key=normTxt(nm)||('cod:'+String(it.codigo||''));
+      if(criados.has(key)) continue; criados.add(key);
+      if(nm && (L.estoque_produtos||[]).some(p=>normTxt(p.nome)===normTxt(nm))) continue;
+      const pl=planoDoItem(it); const ck=codigoKey(st.emitenteDoc,it.codigo);
+      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm||'(sem descrição)', categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, plano_codigo:pl.codigo, plano_descricao:pl.descricao, apelidos:nm?[nm]:[], codigos:ck?[ck]:[], criado_em:new Date().toISOString(), origem_nota:t.nota_chave }});
+    }
     await recarregarEstoque();
-    const nome2id={}; (L.estoque_produtos||[]).forEach(p=>nome2id[(p.nome||'').toLowerCase()]=p.id);
+    const resolvePid=ln=>{ if(ln.action==='vincular'&&ln.matchId) return ln.matchId; const nm=(ln.it.descricao||'').trim(); const p=(L.estoque_produtos||[]).find(x=>nm&&normTxt(x.nome)===normTxt(nm)); return p?p.id:''; };
+    // Passo B: aprender apelidos/códigos nos produtos vinculados
+    const learn={};
+    for(const ln of st.linhas){ if(ln.jaImp||ln.action!=='vincular'||!ln.matchId) continue;
+      const it=ln.it; const nm=(it.descricao||'').trim(); const ck=codigoKey(st.emitenteDoc,it.codigo);
+      const acc=learn[ln.matchId]||(learn[ln.matchId]={ap:[],cds:[]}); if(nm) acc.ap.push(nm); if(ck) acc.cds.push(ck); }
+    for(const pid of Object.keys(learn)){ const p=(L.estoque_produtos||[]).find(x=>x.id===pid); if(!p) continue;
+      const ap=apelidosDe(p).slice(); const cds=codigosDe(p).slice(); let ch=false;
+      learn[pid].ap.forEach(a=>{ if(normTxt(a)!==normTxt(p.nome)&&!ap.some(x=>normTxt(x)===normTxt(a))){ ap.push(a); ch=true; } });
+      learn[pid].cds.forEach(c=>{ if(!cds.includes(c)){ cds.push(c); ch=true; } });
+      if(ch){ const doc=Object.assign({},p); delete doc.id; doc.apelidos=ap; doc.codigos=cds; await reqWrite('PATCH','/rest/v1/estoque_produtos?id=eq.'+pid,{doc}); } }
+    // Passo C: dar entrada
     const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
-    const dataMov=t.data_emissao?String(t.data_emissao).slice(0,10):isoLocal(new Date()); let n=0;
-    for(const it of itens){ const nm=(it.descricao||'').trim(); const pid=nome2id[nm.toLowerCase()]; if(!pid) continue; if(jaImp.has(String(it.item))) continue;
+    let n=0;
+    for(const ln of st.linhas){ if(ln.jaImp) continue; const it=ln.it; if(jaImp.has(String(it.item))) continue;
+      const nm=(it.descricao||'').trim(); const pid=resolvePid(ln); if(!pid) continue;
       await reqWrite('POST','/rest/v1/estoque_mov',{doc:{ produto_id:pid, tipo:'entrada', qtd:Number(it.quantidade||0), valor_unit:(it.valor_unit!=null?Number(it.valor_unit):null), data:dataMov, origem:`NF ${(t.tipo_doc||'')} ${(t.numero||'')}`.trim(), nota_chave:t.nota_chave, item:it.item, item_desc:nm }}); n++; }
+    window.__estImport=null;
     await recarregarEstoque(); render();
-    alert(`Entrada concluída: ${n} item(ns) da nota lançados no estoque.`);
-  }catch(e){ alert('Erro ao importar: '+(e.message||e)); }
+    alert(`Entrada concluída: ${n} item(ns) lançados no estoque.`);
+  }catch(e){ alert('Erro ao dar entrada: '+(e.message||e)); }
 }
 
 // ===================== PASTAGEM =====================
