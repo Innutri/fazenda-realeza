@@ -1157,7 +1157,7 @@ function renderTituloDetalhe(c){
      <button class="btn" onclick='salvarLancamento("${t.id}")'>Salvar lançamento</button>
      <button class="btn ghost" style="margin-left:8px" onclick='gerarDossie("${t.id}")'>🧾 Dossiê (PDF)</button>
    </div>
-   <div class="card"><h3>${t.tipo_doc==='NFSe'?'Serviço da nota':'Produtos da nota'}</h3><div id="fin-itens"><div class="muted">Carregando…</div></div></div>`;
+   <div class="card"><h3>${t.tipo_doc==='NFSe'?'Serviço da nota':'Produtos da nota'}</h3><div id="fin-itens"><div class="muted">Carregando…</div></div><div id="fin-estoque-actions"></div><div id="fin-estoque-box"></div></div>`;
   toggleRateio();
   carregarPagamento(t.nota_chave).then(pg=>{
     const ps=pg.parcelas||[];
@@ -1186,6 +1186,17 @@ function renderTituloDetalhe(c){
     if(box) box.innerHTML = items.length? `<div style="overflow-x:auto"><table><thead><tr><th>#</th><th>Cód.</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th class="num">V. Total</th></tr></thead><tbody>${items.map(it=>`<tr><td>${it.item||''}</td><td>${esc(it.codigo||'—')}</td><td>${esc(it.descricao||'')}</td><td>${esc(it.ncm||'—')}</td><td>${esc(it.cfop||'—')}</td><td>${esc(it.unidade||'—')}</td><td class="num">${q(it.quantidade)}</td><td class="num money">${it.valor_unit!=null?fmtBRL(it.valor_unit):'—'}</td><td class="num money">${fmtBRL(it.valor_total)}</td></tr>`).join('')}</tbody></table></div>` : (t.descricao? `${t.natureza?`<div style="font-weight:700;color:var(--verde);margin-bottom:6px">${esc(t.natureza)}</div>`:''}<p style="white-space:pre-wrap;font-size:13.5px">${esc(t.descricao)}</p>` : '<div class="muted">Nota sem itens nem descrição do serviço.</div>');
     const ri=document.getElementById('rateio-itens');
     if(ri) ri.innerHTML=items.map((it,i)=>{ const r=(l.rateio&&l.rateio[i])||null; const pre=r?((r.plano_codigo||'')+' — '+(r.plano_descricao||'')):''; return `<div class="field"><label>${esc(it.descricao||('Item '+(i+1)))} · ${fmtBRL(it.valor_total)}</label><input id="lc_plano_${i}" list="planos-dl" value="${esc(pre.trim()==='—'?'':pre)}" placeholder="plano de contas"></div>`; }).join('');
+    // botão de dar entrada no estoque direto do título (compras)
+    const act=document.getElementById('fin-estoque-actions');
+    if(act && items.length && t.tipo_titulo==='pagar'){
+      const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
+      const pend=items.filter(it=>!jaImp.has(String(it.item))).length;
+      const todosLancados = pend===0;
+      act.innerHTML=`<div style="border-top:1px solid #eee;margin-top:10px;padding-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn gold" onclick='estCarregarNota("${t.id}","fin-estoque-box")'>📦 ${todosLancados?'Conferir estoque desta nota':'Dar entrada no estoque'}</button>
+        ${todosLancados?'<span class="tag" style="background:#e1f4e6;color:#2e7d54">itens já lançados no estoque</span>':`<span class="muted" style="font-size:13px">${pend} item(ns) para dar entrada. Dica: salve o lançamento com o plano de contas antes, pra ele já ir junto no produto.</span>`}
+      </div>`;
+    }
   }).catch(()=>{ const box=document.getElementById('fin-itens'); if(box) box.innerHTML='<div class="muted">Não foi possível carregar os produtos.</div>'; });
 }
 function toggleRateio(){ const s=document.getElementById('lc_rateio'); if(!s) return; const v=s.value; const a=document.getElementById('rateio-total'), b=document.getElementById('rateio-produto'); if(a)a.style.display=v==='produto'?'none':'block'; if(b)b.style.display=v==='produto'?'block':'none'; }
@@ -2143,33 +2154,89 @@ function renderEstoque(c){
    <div id="est-detalhe"></div>`;
   estToggleValor();
 }
+let estProdTab='mov';
+function estProdAba(id,tab){ estProdTab=tab; estVerProduto(id); }
+function pmToggleValor(id){ const t=(document.getElementById('pm_tipo_'+id)||{}).value; const w=document.getElementById('pm_vwrap_'+id); if(w) w.style.display=(t==='entrada')?'':'none'; }
 function estVerProduto(id){ const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return; const box=document.getElementById('est-detalhe'); if(!box) return;
+  const tab=estProdTab||'mov';
   const ms=movsDe(id).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
-  box.innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">📦 ${esc(p.nome)} — movimentos <span class="muted" style="font-weight:400">(saldo ${(Math.round(saldoProduto(id)*1000)/1000).toString().replace('.',',')} ${esc(p.unidade||'')})</span></h3><button class="btn ghost" onclick='excluirProdutoEstoque("${id}")'>Excluir produto</button></div>
-   <div class="grid" style="margin:8px 0"><div class="field" style="grid-column:1 / span 2"><label>Plano de contas (classificação)</label><input id="ed_plano_${id}" list="est-planos-dl2" value="${esc(p.plano_codigo?((p.plano_codigo||'')+' — '+(p.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div><div class="field" style="align-self:end"><button class="btn" onclick='salvarPlanoProduto("${id}")'>Salvar plano</button></div></div>
-   <datalist id="est-planos-dl2">${planoOptions()}</datalist>
-   <div style="border-top:1px solid #eee;margin:6px 0;padding-top:8px">
-     <div style="font-weight:600;margin-bottom:4px">Apelidos <span class="muted" style="font-weight:400">(como este item vem nas notas de cada loja)</span></div>
-     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-       ${apelidosDe(p).length?apelidosDe(p).map((a,i)=>`<span class="tag" style="background:#eef4fd;color:#2b5fa8">${esc(a)} <a href="#" onclick='estRemApelido("${id}",${i});return false' style="text-decoration:none;color:#b23b3b">✕</a></span>`).join(''):'<span class="muted">nenhum apelido ainda</span>'}
-     </div>
-     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-       <input id="ap_new_${id}" placeholder="adicionar apelido (descrição de outra loja)" style="flex:1;min-width:200px">
-       <button class="btn ghost" style="padding:4px 10px" onclick='estAddApelido("${id}")'>Adicionar</button>
-     </div>
-     ${codigosDe(p).length?`<div class="muted" style="font-size:12px;margin-top:6px">Códigos de fornecedor guardados: ${codigosDe(p).length}</div>`:''}
-   </div>
-   <div style="border-top:1px solid #eee;margin:6px 0;padding-top:8px">
-     <div style="font-weight:600;margin-bottom:4px">Mesclar duplicado</div>
-     <div class="muted" style="font-size:12px;margin-bottom:6px">Se este produto foi cadastrado duas vezes, escolha o outro produto para juntar tudo aqui (movimentos + apelidos). O outro será excluído.</div>
-     <div style="display:flex;gap:6px;flex-wrap:wrap">
-       <select id="merge_${id}" style="flex:1;min-width:200px"><option value="">— escolha o produto a juntar aqui —</option>${(L.estoque_produtos||[]).filter(x=>x.id!==id).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(x=>`<option value="${esc(x.id)}">${esc(x.nome)}${x.categoria?(' · '+esc(x.categoria)):''}</option>`).join('')}</select>
-       <button class="btn ghost" style="padding:4px 10px" onclick='estMesclarProduto("${id}")'>Mesclar aqui</button>
-     </div>
-   </div>
-   ${ms.length?`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Tipo</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th>Origem / Obs</th><th></th></tr></thead><tbody>${ms.map(m=>`<tr><td>${m.data?fmtDate(m.data):'—'}</td><td>${esc(m.tipo)}</td><td class="num">${(Number(m.qtd||0)).toString().replace('.',',')}</td><td class="num">${m.valor_unit!=null?fmtBRL(m.valor_unit):'—'}</td><td>${esc(m.origem||m.obs||'—')}</td><td><button class="btn ghost" style="padding:3px 7px" onclick='excluirMovEstoque("${m.id}")'>✕</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Sem movimentos.</div>'}
+  const saldo=(Math.round(saldoProduto(id)*1000)/1000).toString().replace('.',','); const un=esc(p.unidade||'');
+  const tabBtn=(k,lbl)=>`<button class="${tab===k?'on':''}" onclick='estProdAba("${id}","${k}")'>${lbl}</button>`;
+  const tbl=ms.length?`<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>Data</th><th>Tipo</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th>Origem / Obs</th><th></th></tr></thead><tbody>${ms.map(m=>`<tr><td>${m.data?fmtDate(m.data):'—'}</td><td>${esc(m.tipo)}</td><td class="num">${(Number(m.qtd||0)).toString().replace('.',',')}</td><td class="num">${m.valor_unit!=null?fmtBRL(m.valor_unit):'—'}</td><td>${esc(m.origem||m.obs||'—')}</td><td><button class="btn ghost" style="padding:3px 7px" onclick='excluirMovEstoque("${m.id}")'>✕</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted" style="margin-top:10px">Sem movimentos.</div>';
+  let corpo='';
+  if(tab==='mov'){
+    const destOpts=(L.estoque_produtos||[]).filter(x=>x.id!==id).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(x=>`<option value="${esc(x.id)}">${esc(x.nome)}${x.categoria?(' · '+esc(x.categoria)):''}</option>`).join('');
+    corpo=`<div class="cols2">
+       <div class="card" style="box-shadow:none;border:1px solid #eee;margin:0"><h3 style="margin-top:0">Baixa de consumo / movimento</h3>
+         <div class="grid">
+           <div class="field"><label>Tipo</label><select id="pm_tipo_${id}" onchange="pmToggleValor('${id}')"><option value="saida">Baixa / Consumo (saída)</option><option value="entrada">Entrada</option><option value="ajuste">Ajuste (+/−)</option></select></div>
+           <div class="field"><label>Quantidade (${un||'un'})</label><input id="pm_qtd_${id}" type="number" step="0.001" placeholder="negativo p/ ajuste pra baixo"></div>
+           <div class="field" id="pm_vwrap_${id}" style="display:none"><label>Valor unitário (R$)</label><input id="pm_val_${id}" type="number" step="0.01"></div>
+           <div class="field"><label>Data</label><input id="pm_data_${id}" type="date" value="${isoLocal(new Date())}"></div>
+           <div class="field" style="grid-column:1/-1"><label>Finalidade / máquina / obs</label><input id="pm_obs_${id}" placeholder="ex.: trator, pasto Sede, lote 12"></div>
+         </div>
+         <button class="btn" onclick='salvarMovProduto("${id}")'>Lançar movimento</button>
+       </div>
+       <div class="card" style="box-shadow:none;border:1px solid #eee;margin:0"><h3 style="margin-top:0">Transferir para outro produto</h3>
+         <div class="muted" style="font-size:12px;margin-bottom:6px">Dá saída aqui e entrada no destino, pelo custo médio. Saldo: <b>${saldo} ${un}</b>.</div>
+         <div class="grid">
+           <div class="field" style="grid-column:1/-1"><label>Produto de destino</label><select id="tr_dest_${id}"><option value="">— escolha —</option>${destOpts}</select></div>
+           <div class="field"><label>Quantidade</label><input id="tr_qtd_${id}" type="number" step="0.001"></div>
+           <div class="field"><label>Data</label><input id="tr_data_${id}" type="date" value="${isoLocal(new Date())}"></div>
+           <div class="field" style="grid-column:1/-1"><label>Observação</label><input id="tr_obs_${id}" placeholder="opcional"></div>
+         </div>
+         <button class="btn" onclick='transferirProduto("${id}")'>Transferir</button>
+       </div>
+     </div>${tbl}`;
+  } else if(tab==='ident'){
+    corpo=`<div class="grid" style="margin:4px 0"><div class="field" style="grid-column:1 / span 2"><label>Plano de contas (classificação)</label><input id="ed_plano_${id}" list="est-planos-dl2" value="${esc(p.plano_codigo?((p.plano_codigo||'')+' — '+(p.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div><div class="field" style="align-self:end"><button class="btn" onclick='salvarPlanoProduto("${id}")'>Salvar plano</button></div></div>
+     <div style="border-top:1px solid #eee;margin:6px 0;padding-top:8px">
+       <div style="font-weight:600;margin-bottom:4px">Apelidos <span class="muted" style="font-weight:400">(como este item vem nas notas de cada loja)</span></div>
+       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+         ${apelidosDe(p).length?apelidosDe(p).map((a,i)=>`<span class="tag" style="background:#eef4fd;color:#2b5fa8">${esc(a)} <a href="#" onclick='estRemApelido("${id}",${i});return false' style="text-decoration:none;color:#b23b3b">✕</a></span>`).join(''):'<span class="muted">nenhum apelido ainda</span>'}
+       </div>
+       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+         <input id="ap_new_${id}" placeholder="adicionar apelido (descrição de outra loja)" style="flex:1;min-width:200px">
+         <button class="btn ghost" style="padding:4px 10px" onclick='estAddApelido("${id}")'>Adicionar</button>
+       </div>
+       ${codigosDe(p).length?`<div class="muted" style="font-size:12px;margin-top:6px">Códigos de fornecedor guardados: ${codigosDe(p).length}</div>`:''}
+     </div>`;
+  } else {
+    corpo=`<div style="margin:4px 0">
+       <div class="muted" style="font-size:12px;margin-bottom:6px">Se este produto foi cadastrado duas vezes, escolha o outro produto para juntar tudo aqui (movimentos + apelidos). O outro será excluído.</div>
+       <div style="display:flex;gap:6px;flex-wrap:wrap">
+         <select id="merge_${id}" style="flex:1;min-width:200px"><option value="">— escolha o produto a juntar aqui —</option>${(L.estoque_produtos||[]).filter(x=>x.id!==id).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).map(x=>`<option value="${esc(x.id)}">${esc(x.nome)}${x.categoria?(' · '+esc(x.categoria)):''}</option>`).join('')}</select>
+         <button class="btn ghost" style="padding:4px 10px" onclick='estMesclarProduto("${id}")'>Mesclar aqui</button>
+       </div>
+     </div>`;
+  }
+  box.innerHTML=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">📦 ${esc(p.nome)} <span class="muted" style="font-weight:400">(saldo ${saldo} ${un})</span></h3><button class="btn ghost" onclick='excluirProdutoEstoque("${id}")'>Excluir produto</button></div>
+    <div class="finabas" style="margin:8px 0">${tabBtn('mov','Movimentação')}${tabBtn('ident','Identificação')}${tabBtn('mesclar','Mesclar')}</div>
+    <datalist id="est-planos-dl2">${planoOptions()}</datalist>
+    ${corpo}
   </div>`;
+  if(tab==='mov') pmToggleValor(id);
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function salvarMovProduto(id){ const g=k=>{const e=document.getElementById(k);return e?e.value:'';};
+  const tipo=g('pm_tipo_'+id)||'saida'; let qtd=parseFloat(g('pm_qtd_'+id)); if(isNaN(qtd)){ alert('Informe a quantidade.'); return; }
+  if(tipo!=='ajuste') qtd=Math.abs(qtd);
+  if(tipo==='saida'){ const s=saldoProduto(id); if(qtd>s && !confirm(`Saldo atual é ${(Math.round(s*1000)/1000)}. Dar baixa de ${qtd} mesmo assim (fica negativo)?`)) return; }
+  const doc={ produto_id:id, tipo, qtd, valor_unit:(tipo==='entrada'&&g('pm_val_'+id)!=='')?parseFloat(g('pm_val_'+id)):null, data:g('pm_data_'+id)||isoLocal(new Date()), obs:g('pm_obs_'+id)||null };
+  try{ await reqWrite('POST','/rest/v1/estoque_mov',{doc}); await recarregarEstoque(); render(); estVerProduto(id); }catch(e){ alert('Erro: '+(e.message||e)); } }
+async function transferirProduto(id){ const g=k=>{const e=document.getElementById(k);return e?e.value:'';};
+  const dest=g('tr_dest_'+id); if(!dest){ alert('Escolha o produto de destino.'); return; }
+  if(dest===id){ alert('O destino deve ser diferente.'); return; }
+  let qtd=parseFloat(g('tr_qtd_'+id)); if(isNaN(qtd)||qtd<=0){ alert('Informe a quantidade a transferir.'); return; }
+  const s=saldoProduto(id); if(qtd>s && !confirm(`Saldo atual é ${(Math.round(s*1000)/1000)}. Transferir ${qtd} mesmo assim (origem fica negativa)?`)) return;
+  const cm=custoMedioProduto(id); const data=g('tr_data_'+id)||isoLocal(new Date()); const obs=g('tr_obs_'+id)||'';
+  const pDest=(L.estoque_produtos||[]).find(x=>x.id===dest); const pOrig=(L.estoque_produtos||[]).find(x=>x.id===id);
+  try{
+    await reqWrite('POST','/rest/v1/estoque_mov',{doc:{ produto_id:id, tipo:'saida', qtd, valor_unit:null, data, obs:'Transferência → '+((pDest&&pDest.nome)||'')+(obs?(' · '+obs):''), transferencia:true }});
+    await reqWrite('POST','/rest/v1/estoque_mov',{doc:{ produto_id:dest, tipo:'entrada', qtd, valor_unit:(cm!=null?cm:null), data, obs:'Transferência ← '+((pOrig&&pOrig.nome)||'')+(obs?(' · '+obs):''), transferencia:true }});
+    await recarregarEstoque(); render(); estVerProduto(id);
+  }catch(e){ alert('Erro ao transferir: '+(e.message||e)); }
 }
 async function salvarProdutoEstoque(){ const v=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
   const nome=v('ep_nome'); if(!nome){ alert('Informe o nome do produto.'); return; }
@@ -2217,8 +2284,8 @@ async function estMesclarProduto(destId){
     await recarregarEstoque(); render(); estVerProduto(destId);
   }catch(e){ alert('Erro ao mesclar: '+(e.message||e)); }
 }
-async function estCarregarNota(){
-  const tid=(document.getElementById('en_tit')||{}).value; if(!tid){ alert('Escolha a nota.'); return; }
+async function estCarregarNota(tituloIdArg, boxId){
+  const tid=tituloIdArg||(document.getElementById('en_tit')||{}).value; if(!tid){ alert('Escolha a nota.'); return; }
   const t=titulosFiscais().find(x=>x.id===tid); if(!t) return;
   let itens=[]; try{ itens=await carregarItens(t.nota_chave)||[]; }catch(_){}
   if(!itens.length){ alert('Essa nota não tem itens detalhados (pode ser nota de serviço/NFSe).'); return; }
@@ -2226,11 +2293,12 @@ async function estCarregarNota(){
   const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
   const linhas=itens.map(it=>{ const m=matchProdutoItem(it,emitenteDoc);
     return { it, matchId:m?m.produto.id:'', via:m?m.via:'', action:m?'vincular':'novo', jaImp:jaImp.has(String(it.item)) }; });
-  window.__estImport={ tituloId:tid, notaChave:t.nota_chave, emitenteDoc, contraparte:t.contraparte_nome||'', linhas };
+  window.__estImport={ tituloId:tid, notaChave:t.nota_chave, emitenteDoc, contraparte:t.contraparte_nome||'', linhas, boxId:boxId||'est-import' };
   renderEstImport();
 }
 function renderEstImport(){
-  const box=document.getElementById('est-import'); if(!box) return;
+  const st0=window.__estImport;
+  const box=document.getElementById((st0&&st0.boxId)||'est-import'); if(!box) return;
   const st=window.__estImport; if(!st){ box.innerHTML=''; return; }
   const opts=pid=>{ let o='<option value="__novo__">➕ Criar produto novo</option>'; (L.estoque_produtos||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).forEach(p=>{ o+=`<option value="${esc(p.id)}"${p.id===pid?' selected':''}>${esc(p.nome)}${p.categoria?(' · '+esc(p.categoria)):''}</option>`; }); return o; };
   const rows=st.linhas.map((ln,i)=>{ const it=ln.it; const desc=esc(it.descricao||'—'); const qt=(Number(it.quantidade||0)).toString().replace('.',',');
