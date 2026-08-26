@@ -2091,7 +2091,9 @@ function renderEstoque(c){
          <div class="field"><label>Categoria</label><select id="ep_cat">${EST_CATS.map(x=>`<option>${x}</option>`).join('')}</select></div>
          <div class="field"><label>Unidade</label><input id="ep_un" placeholder="L, kg, un, dose"></div>
          <div class="field"><label>Estoque mínimo (alerta)</label><input id="ep_min" type="number" step="0.01" placeholder="opcional"></div>
+         <div class="field" style="grid-column:1/-1"><label>Plano de contas (classificação contábil)</label><input id="ep_plano" list="est-planos-dl" placeholder="digite código ou nome da conta"></div>
        </div>
+       <datalist id="est-planos-dl">${planoOptions()}</datalist>
        <button class="btn" onclick="salvarProdutoEstoque()">Cadastrar produto</button>
      </div>
      <div class="card"><h3>Movimentar estoque</h3>
@@ -2114,10 +2116,10 @@ function renderEstoque(c){
    <div class="card">
      <div class="finabas" style="margin-bottom:8px"><button class="${!estCat?'on':''}" onclick="estFiltro('')">Todas</button>${EST_CATS.map(catBtn).join('')}</div>
      <h3>Produtos em estoque <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
-     ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Un</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Custo méd.</th><th>Situação</th><th>Ação</th></tr></thead>
+     ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Plano de contas</th><th>Un</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Custo méd.</th><th>Situação</th><th>Ação</th></tr></thead>
      <tbody>${lista.map(p=>{ const s=saldoProduto(p.id); const min=Number(p.estoque_minimo||0); const baixo=min>0&&s<=min; const cm=custoMedioProduto(p.id);
        return `<tr>
-         <td><b>${esc(p.nome||'—')}</b></td><td>${esc(p.categoria||'—')}</td><td>${esc(p.unidade||'—')}</td>
+         <td><b>${esc(p.nome||'—')}</b></td><td>${esc(p.categoria||'—')}</td><td>${esc(p.plano_descricao||p.plano_codigo||'—')}</td><td>${esc(p.unidade||'—')}</td>
          <td class="num"><b style="color:${baixo?'#b23b3b':'inherit'}">${(Math.round(s*1000)/1000).toString().replace('.',',')}</b></td>
          <td class="num">${min?min:'—'}</td><td class="num">${cm!=null?fmtBRL(cm):'—'}</td>
          <td>${baixo?'<span class="tag" style="background:#fdeaea;color:#b23b3b">repor</span>':'<span class="tag" style="background:#e1f4e6;color:#2e7d54">ok</span>'}</td>
@@ -2130,14 +2132,23 @@ function renderEstoque(c){
 function estVerProduto(id){ const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return; const box=document.getElementById('est-detalhe'); if(!box) return;
   const ms=movsDe(id).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
   box.innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">📦 ${esc(p.nome)} — movimentos <span class="muted" style="font-weight:400">(saldo ${(Math.round(saldoProduto(id)*1000)/1000).toString().replace('.',',')} ${esc(p.unidade||'')})</span></h3><button class="btn ghost" onclick='excluirProdutoEstoque("${id}")'>Excluir produto</button></div>
+   <div class="grid" style="margin:8px 0"><div class="field" style="grid-column:1 / span 2"><label>Plano de contas (classificação)</label><input id="ed_plano_${id}" list="est-planos-dl2" value="${esc(p.plano_codigo?((p.plano_codigo||'')+' — '+(p.plano_descricao||'')):'')}" placeholder="digite código ou nome"></div><div class="field" style="align-self:end"><button class="btn" onclick='salvarPlanoProduto("${id}")'>Salvar plano</button></div></div>
+   <datalist id="est-planos-dl2">${planoOptions()}</datalist>
    ${ms.length?`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Tipo</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th>Origem / Obs</th><th></th></tr></thead><tbody>${ms.map(m=>`<tr><td>${m.data?fmtDate(m.data):'—'}</td><td>${esc(m.tipo)}</td><td class="num">${(Number(m.qtd||0)).toString().replace('.',',')}</td><td class="num">${m.valor_unit!=null?fmtBRL(m.valor_unit):'—'}</td><td>${esc(m.origem||m.obs||'—')}</td><td><button class="btn ghost" style="padding:3px 7px" onclick='excluirMovEstoque("${m.id}")'>✕</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Sem movimentos.</div>'}
   </div>`;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 async function salvarProdutoEstoque(){ const v=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
   const nome=v('ep_nome'); if(!nome){ alert('Informe o nome do produto.'); return; }
-  const doc={ nome, categoria:v('ep_cat')||'Outros', unidade:v('ep_un')||null, estoque_minimo: v('ep_min')!==''?parseFloat(v('ep_min')):null, criado_em:new Date().toISOString() };
+  const pp=parsePlano(v('ep_plano'));
+  const doc={ nome, categoria:v('ep_cat')||'Outros', unidade:v('ep_un')||null, estoque_minimo: v('ep_min')!==''?parseFloat(v('ep_min')):null, plano_codigo:pp.codigo, plano_descricao:pp.descricao, criado_em:new Date().toISOString() };
   try{ await reqWrite('POST','/rest/v1/estoque_produtos',{doc}); await recarregarEstoque(); render(); }catch(e){ alert('Erro ao cadastrar: '+(e.message||e)); }
+}
+async function salvarPlanoProduto(id){
+  const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return;
+  const el=document.getElementById('ed_plano_'+id); const pp=parsePlano(el?el.value:'');
+  const doc=Object.assign({}, p); delete doc.id; doc.plano_codigo=pp.codigo; doc.plano_descricao=pp.descricao;
+  try{ await reqWrite('PATCH','/rest/v1/estoque_produtos?id=eq.'+id,{doc}); await recarregarEstoque(); render(); estVerProduto(id); }catch(e){ alert('Erro: '+(e.message||e)); }
 }
 async function salvarMovEstoque(){ const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
   const pid=v('em_prod'); if(!pid){ alert('Escolha o produto.'); return; }
@@ -2155,10 +2166,13 @@ async function estImportarNota(){
   let itens=[]; try{ itens=await carregarItens(t.nota_chave)||[]; }catch(_){}
   if(!itens.length){ alert('Essa nota não tem itens detalhados (pode ser nota de serviço/NFSe).'); return; }
   if(!confirm(`Dar entrada de ${itens.length} item(ns) da nota de ${t.contraparte_nome||''} no estoque?`)) return;
+  const lanc=lancDeTitulo(t.id)||{};
+  const planoDoItem=it=>{ if(lanc.rateio_tipo==='produto' && Array.isArray(lanc.rateio)){ const r=lanc.rateio[(it.item||0)-1]; if(r) return {codigo:r.plano_codigo||null, descricao:r.plano_descricao||null}; }
+    return {codigo:lanc.plano_codigo||null, descricao:lanc.plano_descricao||null}; };
   try{
     const existentesNome=new Set((L.estoque_produtos||[]).map(p=>(p.nome||'').toLowerCase()));
-    for(const it of itens){ const nm=(it.descricao||'').trim(); if(nm && !existentesNome.has(nm.toLowerCase())){ existentesNome.add(nm.toLowerCase());
-      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm, categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, criado_em:new Date().toISOString(), origem_nota:t.nota_chave }}); } }
+    for(const it of itens){ const nm=(it.descricao||'').trim(); if(nm && !existentesNome.has(nm.toLowerCase())){ existentesNome.add(nm.toLowerCase()); const pl=planoDoItem(it);
+      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm, categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, plano_codigo:pl.codigo, plano_descricao:pl.descricao, criado_em:new Date().toISOString(), origem_nota:t.nota_chave }}); } }
     await recarregarEstoque();
     const nome2id={}; (L.estoque_produtos||[]).forEach(p=>nome2id[(p.nome||'').toLowerCase()]=p.id);
     const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
