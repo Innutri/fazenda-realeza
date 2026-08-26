@@ -270,7 +270,7 @@ async function lerTabela(t){
   return all.map(r=>Object.assign({},r.doc,{id:r.id}));
 }
 async function lerTitulos(){
-  const cols="app_slug,id,nota_chave,tipo_titulo,tipo_doc,numero,serie,data_emissao,vencimento,valor,contraparte_nome,contraparte_doc,cfop,natureza,descricao,status,pago,data_pagamento,valor_pago";
+  const cols="app_slug,id,nota_chave,tipo_titulo,tipo_doc,numero,serie,data_emissao,vencimento,valor,contraparte_nome,contraparte_doc,contraparte_ie,cfop,natureza,descricao,status,pago,data_pagamento,valor_pago,conta_ref,forma_pagamento,extrato_id";
   return await req(`/rest/v1/gestao_titulos_por_app?app_slug=eq.${APP_SLUG}&select=${cols}&order=data_emissao.desc&limit=5000`, true);
 }
 async function lerPlanos(){
@@ -1118,7 +1118,16 @@ function renderFinanceiro(c){
 function renderTituloDetalhe(c){
   const t=titulosFiscais().find(x=>x.id===finTituloId);
   if(!t){ finMode='lista'; return renderFinanceiro(c); }
-  const l=lancDeTitulo(t.id)||{};
+  const l=Object.assign({}, lancDeTitulo(t.id)||{});
+  // se o título já recebeu baixa/conciliação no SINTEGRA, reflete no formulário
+  // (senão, salvar por cima desfazia o pagamento sem querer)
+  if(t.pago){
+    if(!l.pago) l.pago=true;
+    if(!l.data_pagamento && t.data_pagamento) l.data_pagamento=String(t.data_pagamento).slice(0,10);
+    if(!l.vencimento && t.vencimento) l.vencimento=String(t.vencimento).slice(0,10);
+    if(!l.forma_pagamento && t.forma_pagamento) l.forma_pagamento=t.forma_pagamento;
+    if(!l.conta_id && t.conta_ref){ const cm=(L.contas||[]).find(x=>contaLabel(x)===t.conta_ref); if(cm) l.conta_id=cm.id; }
+  }
   c.innerHTML=`
    <div class="finhead"><button class="btn ghost" onclick="finVoltar()">← Voltar</button><div class="pgtitle" style="margin:0">Título a ${t.tipo_titulo==='pagar'?'pagar':'receber'} — ${esc(t.contraparte_nome||'')}</div></div>
    <div class="card">
@@ -1202,12 +1211,17 @@ async function salvarLancamento(tituloId){
     else await reqWrite('POST', `/rest/v1/gestao_lancamentos`, {doc});
     // baixa/conciliação volta pro SINTEGRA (gestao_titulos) → forma o livro caixa
     try{
-      await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${t.id}`, {
+      const patch={
         status: pago?'pago':'lancado', lancado_em:new Date().toISOString(),
         pago:!!pago, data_pagamento: pago?(val('lc_dpag')||null):null, valor_pago: pago?Number(t.valor||0):null,
         conta_ref: contaRef, forma_pagamento: val('lc_forma')||null, vencimento: venc
-      });
-      await recarregarTitulos();
+      };
+      // se desmarcou "pago" num título que estava conciliado, desfaz também a conciliação do extrato
+      if(!pago && t.extrato_id){ patch.extrato_id=null;
+        try{ await reqWrite('PATCH', `/rest/v1/gestao_extratos?id=eq.${t.extrato_id}`, {conciliado:false, titulo_id:null}); }catch(_){}
+      }
+      await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${t.id}`, patch);
+      await recarregarTitulos(); L.extratos=await lerExtratos();
     }catch(e2){ console.warn('baixa gestao_titulos falhou', e2); alert('Lançamento salvo no app, mas a baixa não voltou pro SINTEGRA: '+(e2.message||e2)); }
     await recarregarLancamentos(); finMode='lista'; render();
   }catch(e){ alert('Erro ao salvar: '+(e.message||e)); }
@@ -1458,6 +1472,7 @@ function exportarLivroCaixa(){
 /* ===================== CONCILIAÇÃO BANCÁRIA (extrato) ===================== */
 function parseNumBR(s){ if(s==null) return null; let x=String(s).replace(/\s|R\$/gi,''); if(!/[0-9]/.test(x)) return null;
   if(x.indexOf(',')>=0){ x=x.replace(/\./g,'').replace(',', '.'); } // 1.234,56 -> 1234.56
+  else if(/^-?\d{1,3}(\.\d{3})+$/.test(x)){ x=x.replace(/\./g,''); } // 1.234 / 1.234.567 (milhar sem centavos)
   const n=parseFloat(x); return isNaN(n)?null:n; }
 function parseDataBR(s){ if(!s) return null; s=String(s).trim();
   let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
@@ -1701,7 +1716,7 @@ async function fecharFatura(cartao){
   if(!its.length) return;
   const tot=its.reduce((s,x)=>s+x.valor,0);
   if(!confirm(`Marcar a fatura do ${cartao} como PAGA?\nIsso fecha ${its.length} lançamento(s), total ${fmtBRL(tot)}. Depois é só conciliar o débito único da fatura no extrato.`)) return;
-  const hoje=new Date().toISOString().slice(0,10);
+  const hoje=isoLocal(new Date());
   try{
     for(const x of its){ const l=(L.gestao_lancamentos||[]).find(g=>g.id===x.lancId); if(!l) continue; const {id, ...doc}=l; doc.cartao_quitado=true; doc.cartao_quitado_em=hoje; await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${id}`, {doc}); }
     await recarregarLancamentos(); render();
@@ -1780,6 +1795,7 @@ async function importarExtrato(){
 async function conciliar(extId, titId){
   const e=(L.extratos||[]).find(x=>x.id===extId); const t=titulosFiscais().find(x=>x.id===titId);
   if(!e||!t) return;
+  if(tituloPago(t)){ alert('Este título já está pago/conciliado.'); return; }
   try{
     await reqWrite('PATCH', `/rest/v1/gestao_extratos?id=eq.${extId}`, { conciliado:true, titulo_id:titId });
     await reqWrite('PATCH', `/rest/v1/gestao_titulos?id=eq.${titId}`, { pago:true, status:'pago', data_pagamento:e.data, valor_pago:Math.abs(Number(e.valor)), conta_ref:e.conta_ref, extrato_id:extId, lancado_em:new Date().toISOString() });
