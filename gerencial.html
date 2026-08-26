@@ -194,7 +194,7 @@
 const SB_URL="https://kjjyscczxsymgdvbfiji.supabase.co";
 const SB_KEY="sb_publishable_h-_5949kSZp_8jHgsDnBtQ_0IIclnqn";
 const APP_SLUG="fazenda-realeza";
-const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes","pastos","gestao_lancamentos"];
+const TABELAS=["animais","operacoes_rebanho","reproducao","reproducao_touros","equipes","lotes","pastos","gestao_lancamentos","estoque_produtos","estoque_mov"];
 const L={};
 
 // ---------- Sessão / login (Supabase Auth via REST) ----------
@@ -385,6 +385,7 @@ const SECOES=[
   {id:"pastagem",      ic:"🌱", nome:"Pastagem",      grupo:"Operação",   vivo:true },
   {id:"financeiro",    ic:"💰", nome:"Financeiro",    grupo:"Gestão",     vivo:true },
   {id:"vendas",        ic:"🐂", nome:"Compra e Venda", grupo:"Gestão",     vivo:true },
+  {id:"estoque",       ic:"📦", nome:"Estoque",        grupo:"Gestão",     vivo:true },
   {id:"compras",       ic:"🛒", nome:"Compras",       grupo:"Gestão",     vivo:false},
   {id:"maquinarios",   ic:"🚜", nome:"Maquinários",   grupo:"Gestão",     vivo:false},
   {id:"contabilidade", ic:"📒", nome:"Contabilidade", grupo:"Gestão",     vivo:false},
@@ -438,7 +439,7 @@ function render(){
   const id=secAtual();
   document.querySelectorAll(".navitem").forEach(n=>n.classList.toggle("active",n.dataset.sec===id));
   const c=document.getElementById("conteudo");
-  const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig, cadastros:renderCadastros,
+  const map={rebanho:renderRebanho, relatorios:renderRelatorios, config:renderConfig, cadastros:renderCadastros, estoque:renderEstoque,
     financeiro:renderFinanceiro, vendas:renderVendas, pastagem:renderPastagem, compras:pCompras, maquinarios:pMaquinarios, contabilidade:pContabilidade};
   (map[id]||renderRebanho)(c);
   window.scrollTo(0,0);
@@ -2056,6 +2057,118 @@ async function salvarCompraLote(){
 }
 async function excluirCompraLote(id){ if(!confirm('Excluir este registro de compra? (a conta a pagar também sai)')) return;
   try{ await reqWrite('DELETE',`/rest/v1/gestao_lancamentos?id=eq.${id}`); await recarregarLancamentos(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
+
+/* ===================== ESTOQUE (suprimentos) ===================== */
+let estCat='';
+const EST_CATS=['Peças','Combustível','Insumos','Sal mineral','Ração','Medicamentos/Vacinas','Sêmen','Outros'];
+async function recarregarEstoque(){ try{ L.estoque_produtos=await lerTabela('estoque_produtos'); L.estoque_mov=await lerTabela('estoque_mov'); }catch(e){} }
+function movsDe(pid){ return (L.estoque_mov||[]).filter(m=>m.produto_id===pid); }
+function saldoProduto(pid){ let s=0; movsDe(pid).forEach(m=>{ const q=Number(m.qtd||0); if(m.tipo==='saida') s-=q; else s+=q; }); return Math.round(s*1000)/1000; }
+function custoMedioProduto(pid){ let q=0,v=0,last=null; movsDe(pid).filter(m=>m.tipo==='entrada'&&m.valor_unit!=null).forEach(m=>{ q+=Number(m.qtd||0); v+=Number(m.qtd||0)*Number(m.valor_unit||0); last=Number(m.valor_unit); }); return q>0? v/q : (last!=null?last:null); }
+function estOpcoesProduto(sel){ let o='<option value="">— escolha o produto —</option>'; (L.estoque_produtos||[]).slice().sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''))).forEach(p=>{ o+=`<option value="${esc(p.id)}"${p.id===sel?' selected':''}>${esc(p.nome)} · ${esc(p.categoria||'—')}</option>`; }); return o; }
+function estOpcoesTitulo(){ let o='<option value="">— escolha a nota —</option>'; titulosFiscais().filter(t=>t.tipo_titulo==='pagar' && t.nota_chave).slice(0,300).forEach(t=>{ o+=`<option value="${esc(t.id)}">${esc(t.contraparte_nome||'')} · ${esc((t.tipo_doc||'')+' '+(t.numero||''))} · ${fmtBRL(t.valor)}</option>`; }); return o; }
+function estFiltro(cat){ estCat=cat; render(); }
+function estToggleValor(){ const t=(document.getElementById('em_tipo')||{}).value; const w=document.getElementById('em_vwrap'); if(w) w.style.display=t==='saida'?'none':''; }
+function renderEstoque(c){
+  const prods=(L.estoque_produtos||[]).slice();
+  const abaixo=prods.filter(p=>Number(p.estoque_minimo||0)>0 && saldoProduto(p.id)<=Number(p.estoque_minimo)).length;
+  const valorTotal=prods.reduce((s,p)=>{ const cm=custoMedioProduto(p.id); return s+(cm!=null? saldoProduto(p.id)*cm:0); },0);
+  let lista=prods; if(estCat) lista=lista.filter(p=>(p.categoria||'')===estCat);
+  lista.sort((a,b)=>String(a.categoria||'').localeCompare(String(b.categoria||''))||String(a.nome||'').localeCompare(String(b.nome||'')));
+  const catBtn=cat=>`<button class="${estCat===cat?'on':''}" onclick="estFiltro('${cat}')">${cat}</button>`;
+  c.innerHTML=`
+   <div class="pgtitle">📦 Estoque</div>
+   <div class="pgsub">Controle de peças, combustível, insumos, medicamentos e demais suprimentos — separado do estoque de animais. Saldo = entradas − saídas.</div>
+   <div class="card"><div class="kpis">
+     <div class="kpi"><div class="v num">${prods.length}</div><div class="l">Produtos cadastrados</div></div>
+     <div class="kpi"><div class="v num" style="color:${abaixo?'#b23b3b':'#2e7d54'}">${abaixo}</div><div class="l">Abaixo do mínimo</div></div>
+     <div class="kpi"><div class="v money">${fmtBRL(valorTotal)}</div><div class="l">Valor em estoque (custo médio)</div></div>
+   </div></div>
+   <div class="cols2">
+     <div class="card"><h3>Cadastrar produto</h3>
+       <div class="grid">
+         <div class="field"><label>Nome</label><input id="ep_nome" placeholder="ex.: Óleo diesel, Filtro X, Sal 80..."></div>
+         <div class="field"><label>Categoria</label><select id="ep_cat">${EST_CATS.map(x=>`<option>${x}</option>`).join('')}</select></div>
+         <div class="field"><label>Unidade</label><input id="ep_un" placeholder="L, kg, un, dose"></div>
+         <div class="field"><label>Estoque mínimo (alerta)</label><input id="ep_min" type="number" step="0.01" placeholder="opcional"></div>
+       </div>
+       <button class="btn" onclick="salvarProdutoEstoque()">Cadastrar produto</button>
+     </div>
+     <div class="card"><h3>Movimentar estoque</h3>
+       <div class="grid">
+         <div class="field" style="grid-column:1/-1"><label>Produto</label><select id="em_prod">${estOpcoesProduto('')}</select></div>
+         <div class="field"><label>Tipo</label><select id="em_tipo" onchange="estToggleValor()"><option value="entrada">Entrada (compra)</option><option value="saida">Saída (consumo)</option><option value="ajuste">Ajuste (+/−)</option></select></div>
+         <div class="field"><label>Quantidade</label><input id="em_qtd" type="number" step="0.001" placeholder="negativo p/ ajuste pra baixo"></div>
+         <div class="field" id="em_vwrap"><label>Valor unitário (R$)</label><input id="em_val" type="number" step="0.01"></div>
+         <div class="field"><label>Data</label><input id="em_data" type="date" value="${isoLocal(new Date())}"></div>
+         <div class="field" style="grid-column:1/-1"><label>Observação / máquina</label><input id="em_obs" placeholder="opcional (ex.: trator, veículo)"></div>
+       </div>
+       <button class="btn" onclick="salvarMovEstoque()">Lançar movimento</button>
+     </div>
+   </div>
+   <div class="card"><h3>📥 Entrada pela nota fiscal <span class="muted" style="font-weight:400">(compras a pagar)</span></h3>
+     <div class="field"><label>Escolha a nota (fornecedor)</label><select id="en_tit">${estOpcoesTitulo()}</select></div>
+     <button class="btn gold" onclick="estImportarNota()" style="margin-top:8px">Puxar itens da nota e dar entrada</button>
+     <p class="muted" style="margin-top:6px">Cria/atualiza os produtos pelos itens da nota e lança a entrada com a quantidade e o valor. Depois você ajusta a categoria de cada um.</p>
+   </div>
+   <div class="card">
+     <div class="finabas" style="margin-bottom:8px"><button class="${!estCat?'on':''}" onclick="estFiltro('')">Todas</button>${EST_CATS.map(catBtn).join('')}</div>
+     <h3>Produtos em estoque <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
+     ${lista.length?`<div style="overflow-x:auto"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Un</th><th class="num">Saldo</th><th class="num">Mínimo</th><th class="num">Custo méd.</th><th>Situação</th><th>Ação</th></tr></thead>
+     <tbody>${lista.map(p=>{ const s=saldoProduto(p.id); const min=Number(p.estoque_minimo||0); const baixo=min>0&&s<=min; const cm=custoMedioProduto(p.id);
+       return `<tr>
+         <td><b>${esc(p.nome||'—')}</b></td><td>${esc(p.categoria||'—')}</td><td>${esc(p.unidade||'—')}</td>
+         <td class="num"><b style="color:${baixo?'#b23b3b':'inherit'}">${(Math.round(s*1000)/1000).toString().replace('.',',')}</b></td>
+         <td class="num">${min?min:'—'}</td><td class="num">${cm!=null?fmtBRL(cm):'—'}</td>
+         <td>${baixo?'<span class="tag" style="background:#fdeaea;color:#b23b3b">repor</span>':'<span class="tag" style="background:#e1f4e6;color:#2e7d54">ok</span>'}</td>
+         <td><button class="btn ghost" style="padding:4px 8px" onclick='estVerProduto("${p.id}")'>Movimentos</button></td>
+       </tr>`; }).join('')}</tbody></table></div>`:'<div class="empty">Nenhum produto nesta categoria. Cadastre acima ou importe de uma nota.</div>'}
+   </div>
+   <div id="est-detalhe"></div>`;
+  estToggleValor();
+}
+function estVerProduto(id){ const p=(L.estoque_produtos||[]).find(x=>x.id===id); if(!p) return; const box=document.getElementById('est-detalhe'); if(!box) return;
+  const ms=movsDe(id).slice().sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  box.innerHTML=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">📦 ${esc(p.nome)} — movimentos <span class="muted" style="font-weight:400">(saldo ${(Math.round(saldoProduto(id)*1000)/1000).toString().replace('.',',')} ${esc(p.unidade||'')})</span></h3><button class="btn ghost" onclick='excluirProdutoEstoque("${id}")'>Excluir produto</button></div>
+   ${ms.length?`<div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Tipo</th><th class="num">Qtd</th><th class="num">V. Unit.</th><th>Origem / Obs</th><th></th></tr></thead><tbody>${ms.map(m=>`<tr><td>${m.data?fmtDate(m.data):'—'}</td><td>${esc(m.tipo)}</td><td class="num">${(Number(m.qtd||0)).toString().replace('.',',')}</td><td class="num">${m.valor_unit!=null?fmtBRL(m.valor_unit):'—'}</td><td>${esc(m.origem||m.obs||'—')}</td><td><button class="btn ghost" style="padding:3px 7px" onclick='excluirMovEstoque("${m.id}")'>✕</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="muted">Sem movimentos.</div>'}
+  </div>`;
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function salvarProdutoEstoque(){ const v=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+  const nome=v('ep_nome'); if(!nome){ alert('Informe o nome do produto.'); return; }
+  const doc={ nome, categoria:v('ep_cat')||'Outros', unidade:v('ep_un')||null, estoque_minimo: v('ep_min')!==''?parseFloat(v('ep_min')):null, criado_em:new Date().toISOString() };
+  try{ await reqWrite('POST','/rest/v1/estoque_produtos',{doc}); await recarregarEstoque(); render(); }catch(e){ alert('Erro ao cadastrar: '+(e.message||e)); }
+}
+async function salvarMovEstoque(){ const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const pid=v('em_prod'); if(!pid){ alert('Escolha o produto.'); return; }
+  const tipo=v('em_tipo')||'entrada'; let qtd=parseFloat(v('em_qtd')); if(isNaN(qtd)){ alert('Informe a quantidade.'); return; }
+  if(tipo!=='ajuste') qtd=Math.abs(qtd);
+  const doc={ produto_id:pid, tipo, qtd, valor_unit:(tipo!=='saida' && v('em_val')!=='')?parseFloat(v('em_val')):null, data:v('em_data')||isoLocal(new Date()), obs:v('em_obs')||null };
+  try{ await reqWrite('POST','/rest/v1/estoque_mov',{doc}); await recarregarEstoque(); render(); }catch(e){ alert('Erro ao lançar: '+(e.message||e)); }
+}
+async function excluirMovEstoque(id){ if(!confirm('Excluir este movimento?')) return; try{ await reqWrite('DELETE','/rest/v1/estoque_mov?id=eq.'+id); await recarregarEstoque(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
+async function excluirProdutoEstoque(id){ if(!confirm('Excluir o produto e todos os seus movimentos?')) return;
+  try{ for(const m of movsDe(id)){ await reqWrite('DELETE','/rest/v1/estoque_mov?id=eq.'+m.id); } await reqWrite('DELETE','/rest/v1/estoque_produtos?id=eq.'+id); await recarregarEstoque(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
+async function estImportarNota(){
+  const tid=(document.getElementById('en_tit')||{}).value; if(!tid){ alert('Escolha a nota.'); return; }
+  const t=titulosFiscais().find(x=>x.id===tid); if(!t) return;
+  let itens=[]; try{ itens=await carregarItens(t.nota_chave)||[]; }catch(_){}
+  if(!itens.length){ alert('Essa nota não tem itens detalhados (pode ser nota de serviço/NFSe).'); return; }
+  if(!confirm(`Dar entrada de ${itens.length} item(ns) da nota de ${t.contraparte_nome||''} no estoque?`)) return;
+  try{
+    const existentesNome=new Set((L.estoque_produtos||[]).map(p=>(p.nome||'').toLowerCase()));
+    for(const it of itens){ const nm=(it.descricao||'').trim(); if(nm && !existentesNome.has(nm.toLowerCase())){ existentesNome.add(nm.toLowerCase());
+      await reqWrite('POST','/rest/v1/estoque_produtos',{doc:{ nome:nm, categoria:'Outros', unidade:it.unidade||null, estoque_minimo:null, criado_em:new Date().toISOString(), origem_nota:t.nota_chave }}); } }
+    await recarregarEstoque();
+    const nome2id={}; (L.estoque_produtos||[]).forEach(p=>nome2id[(p.nome||'').toLowerCase()]=p.id);
+    const jaImp=new Set((L.estoque_mov||[]).filter(m=>m.nota_chave===t.nota_chave).map(m=>String(m.item)));
+    const dataMov=t.data_emissao?String(t.data_emissao).slice(0,10):isoLocal(new Date()); let n=0;
+    for(const it of itens){ const nm=(it.descricao||'').trim(); const pid=nome2id[nm.toLowerCase()]; if(!pid) continue; if(jaImp.has(String(it.item))) continue;
+      await reqWrite('POST','/rest/v1/estoque_mov',{doc:{ produto_id:pid, tipo:'entrada', qtd:Number(it.quantidade||0), valor_unit:(it.valor_unit!=null?Number(it.valor_unit):null), data:dataMov, origem:`NF ${(t.tipo_doc||'')} ${(t.numero||'')}`.trim(), nota_chave:t.nota_chave, item:it.item, item_desc:nm }}); n++; }
+    await recarregarEstoque(); render();
+    alert(`Entrada concluída: ${n} item(ns) da nota lançados no estoque.`);
+  }catch(e){ alert('Erro ao importar: '+(e.message||e)); }
+}
 
 // ===================== PASTAGEM =====================
 function calcPastagemG(p){ const area=parseFloat(p.area_ha)||0,cab=parseInt(p.cabecas)||0,pm=parseFloat(p.peso_medio)||0,pt=cab*pm,ua=pt/450; return {area,cab,pm,pt,ua,lot:area>0?ua/area:null,cabHa:area>0?cab/area:null}; }
