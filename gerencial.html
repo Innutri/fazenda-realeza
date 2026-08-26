@@ -1370,6 +1370,13 @@ function renderContasLista(c){
      <tbody>${list.map(ct=>`<tr onclick='cadEditConta("${ct.id}")' style="cursor:pointer">
         <td><b>${esc(ct.banco||'—')}</b></td><td>${esc(ct.agencia||'—')}</td><td>${esc(ct.conta||'—')}</td><td>${esc(ct.tipo||'—')}</td><td>${esc(ct.titular||'—')}</td><td>${esc(ct.pix||'—')}</td>
         <td><button class="btn gold" style="padding:5px 12px;font-size:12.5px" onclick='event.stopPropagation();cadEditConta("${ct.id}")'>✏️ Editar</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nenhuma conta cadastrada ainda. Clique em “＋ Nova conta”.</div>'}
+   </div>
+   <div class="card">
+     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+       <h3 style="margin:0">💾 Backup completo do sistema</h3>
+       <button class="btn gold" id="bkp-btn" onclick="gerarBackup()">💾 Baixar backup completo</button>
+     </div>
+     <p class="muted" style="margin-top:8px">Baixa um único arquivo <b>.json</b> com <b>todos os dados</b> (animais, operações, lotes, pastos, estoque, financeiro, notas), a <b>estrutura</b> (SQL para recriar as tabelas) e o <b>código-fonte</b> dos dois apps — tudo o que é preciso para reconstruir o sistema do zero. Guarde numa pasta segura ou no Drive. Recomendado fazer periodicamente.</p>
    </div>`;
 }
 function renderContaForm(c){
@@ -1406,6 +1413,74 @@ async function excluirConta(id){
   if(!confirm('Excluir esta conta bancária? Lançamentos já vinculados a ela mantêm o nome gravado.')) return;
   try{ await reqWrite('DELETE', `/rest/v1/fiscal_contas_bancarias?id=eq.${id}`); L.contas=await lerContas(); cadContaMode='lista'; render(); }
   catch(e){ alert('Erro: '+(e.message||e)); }
+}
+/* ===================== BACKUP COMPLETO ===================== */
+function ddlBackup(){
+  let s='-- ====== ESTRUTURA DO APP (Fazenda Realeza) ======\n';
+  s+='-- Recriar num projeto Postgres/Supabase novo. As tabelas do app seguem o padrão id (uuid) + doc (jsonb).\n';
+  s+='-- Para reimportar os dados: em cada registro do backup, a coluna "id" vai em id e o RESTO do objeto vira o jsonb "doc".\n';
+  s+='create extension if not exists "pgcrypto";\n\n';
+  TABELAS.forEach(t=>{
+    s+=`create table if not exists ${t} (\n  id uuid primary key default gen_random_uuid(),\n  doc jsonb not null default '{}'::jsonb,\n  criado_em timestamptz default now()\n);\n`;
+    s+=`alter table ${t} enable row level security;\n`;
+    s+=`create policy dev_all on ${t} for all to anon, authenticated using (true) with check (true);\n\n`;
+  });
+  s+='-- ====== TABELAS EXTERNAS (SINTEGRA Lamarta) ======\n';
+  s+='-- Fonte fiscal, compartilhadas por produtor (ficam no sistema SINTEGRA, não neste app):\n';
+  s+='--   gestao_titulos, gestao_extratos, gestao_app_produtores, gestao_titulos_por_app (view),\n';
+  s+='--   fiscal_notas, fiscal_nota_itens, fiscal_contas_bancarias, fiscal_plano_contas,\n';
+  s+='--   fiscal_propriedades, fiscal_produtor_usuarios, fiscal_permissoes.\n';
+  s+='-- Os DADOS delas também vão no backup (seção "dados") para referência/reimportação.\n';
+  return s;
+}
+async function gerarBackup(){
+  const btn=document.getElementById('bkp-btn'); if(btn){ btn.disabled=true; btn.textContent='Gerando backup…'; }
+  try{
+    // dados frescos do app
+    for(const t of TABELAS){ try{ L[t]=await lerTabela(t); }catch(_){} }
+    try{ L.titulos=await lerTitulos(); }catch(_){}
+    try{ L.extratos=await lerExtratos(); }catch(_){}
+    try{ L.contas=await lerContas(); }catch(_){}
+    try{ L.planos=await lerPlanos(); }catch(_){}
+    try{ L.propriedades=await lerPropriedades(); }catch(_){}
+    const pid=await lerProdutorId().catch(()=>null);
+    // referências fiscais (best-effort — podem ser grandes)
+    let notas=[], itens=[];
+    try{ const url=pid?`/rest/v1/fiscal_notas?produtor_id=eq.${pid}&select=*&limit=10000`:`/rest/v1/fiscal_notas?select=*&limit=10000`; notas=await req(url, true); }catch(_){}
+    try{ const url=pid?`/rest/v1/fiscal_nota_itens?produtor_id=eq.${pid}&select=*&limit=50000`:`/rest/v1/fiscal_nota_itens?select=*&limit=50000`; itens=await req(url, true); }catch(_){}
+    // código-fonte dos apps (para reconstrução total)
+    const codigo={};
+    try{ codigo['gerencial.html']=await fetch('gerencial.html',{cache:'no-store'}).then(r=>r.text()); }catch(_){}
+    try{ codigo['index.html (app de campo)']=await fetch('index.html',{cache:'no-store'}).then(r=>r.text()); }catch(_){}
+    const dados={
+      animais:L.animais||[], operacoes_rebanho:L.operacoes_rebanho||[], reproducao:L.reproducao||[], reproducao_touros:L.reproducao_touros||[],
+      equipes:L.equipes||[], lotes:L.lotes||[], pastos:L.pastos||[], gestao_lancamentos:L.gestao_lancamentos||[],
+      estoque_produtos:L.estoque_produtos||[], estoque_mov:L.estoque_mov||[],
+      gestao_titulos:L.titulos||[], gestao_extratos:L.extratos||[],
+      fiscal_contas_bancarias:L.contas||[], fiscal_plano_contas:L.planos||[], fiscal_propriedades:L.propriedades||[],
+      fiscal_notas:notas, fiscal_nota_itens:itens
+    };
+    const contagem={}; Object.keys(dados).forEach(k=>contagem[k]=(dados[k]||[]).length);
+    const backup={
+      _tipo:'backup-completo-fazenda-realeza', versao:1,
+      gerado_em:new Date().toISOString(),
+      app:{ nome:'Fazenda Realeza — Gerencial + Campo', app_slug:APP_SLUG, supabase_ref:'kjjyscczxsymgdvbfiji', supabase_url:SB_URL, produtor_id:pid, usuario:(SESSION&&SESSION.email)||null },
+      instrucoes:'Contém TUDO para reconstruir o sistema do zero: (1) estrutura_sql = crie as tabelas do app num Postgres/Supabase novo; (2) dados = reimporte cada lista na sua tabela — nas tabelas do app (id + doc jsonb), o campo id vai na coluna id e o resto do objeto vira a coluna doc; (3) codigo_fonte = os HTML dos dois apps (gerencial + campo). Tabelas fiscal_/gestao_ vêm do SINTEGRA Lamarta (fonte externa das notas).',
+      contagem,
+      estrutura_sql:ddlBackup(),
+      dados,
+      codigo_fonte:codigo
+    };
+    const json=JSON.stringify(backup,null,2);
+    const nome=`backup-fazenda-realeza-${isoLocal(new Date())}.json`;
+    const blob=new Blob([json],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ a.remove(); URL.revokeObjectURL(a.href); },1500);
+    const tot=Object.values(contagem).reduce((s,n)=>s+Number(n||0),0);
+    const mb=(blob.size/1048576).toFixed(2);
+    alert(`Backup gerado: ${nome}\n${tot} registros no total + estrutura (SQL) + código-fonte dos apps.\nTamanho: ${mb} MB.`);
+  }catch(e){ alert('Erro ao gerar backup: '+(e.message||e)); }
+  finally{ const b=document.getElementById('bkp-btn'); if(b){ b.disabled=false; b.textContent='💾 Baixar backup completo'; } }
 }
 
 /* ===================== LIVRO CAIXA ===================== */
