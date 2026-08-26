@@ -384,7 +384,7 @@ const SECOES=[
   {id:"rebanho",       ic:"📊", nome:"Rebanho",       grupo:"Operação",   vivo:true },
   {id:"pastagem",      ic:"🌱", nome:"Pastagem",      grupo:"Operação",   vivo:true },
   {id:"financeiro",    ic:"💰", nome:"Financeiro",    grupo:"Gestão",     vivo:true },
-  {id:"vendas",        ic:"💵", nome:"Vendas",        grupo:"Gestão",     vivo:true },
+  {id:"vendas",        ic:"🐂", nome:"Compra e Venda", grupo:"Gestão",     vivo:true },
   {id:"compras",       ic:"🛒", nome:"Compras",       grupo:"Gestão",     vivo:false},
   {id:"maquinarios",   ic:"🚜", nome:"Maquinários",   grupo:"Gestão",     vivo:false},
   {id:"contabilidade", ic:"📒", nome:"Contabilidade", grupo:"Gestão",     vivo:false},
@@ -1852,72 +1852,168 @@ function resumoVeiculosG(l){
   (l.animais||[]).forEach((a,i)=>{ const k=veiculoDaPosicaoG(l.veiculos,i); if(g[k]) g[k].push(a); });
   return l.veiculos.map((v,k)=>({nome:`${v.nome} ${k+1}`, cap:v.capacidade, n:(g[k]||[]).length}));
 }
+let comAba='venda';
+function comTab(a){ comAba=a; render(); }
+async function recarregarLotes(){ try{ L.lotes=await lerTabela("lotes"); }catch(e){} }
+function renderVendas(c){
+  c.innerHTML=`
+  <div class="pgtitle">🐂 Compra e venda de animais</div>
+  <div class="pgsub">Liga o operacional (embarque e pesagem no app de campo) ao financeiro: rendimento de carcaça, preço e nota fiscal.</div>
+  <div class="finabas">
+    <button class="${comAba==='venda'?'on':''}" onclick="comTab('venda')">🚚 Venda (abate)</button>
+    <button class="${comAba==='compra'?'on':''}" onclick="comTab('compra')">🛒 Compra</button>
+  </div>
+  <div id="com-body"></div>`;
+  if(comAba==='compra') renderComercialCompra(); else renderComercialVenda();
+}
+function resumoLinhaVeic(l){ const rv=resumoVeiculosG(l); return rv.length?`<br>Veículos: ${rv.map(v=>`${esc(v.nome)} (${v.n}/${v.cap})`).join(" · ")}`:""; }
 function cardEmbarqueAguardando(l){
-  const rv=resumoVeiculosG(l);
-  const carcTotal = l.peso_medio_carcaca!=null ? Math.round(l.peso_medio_carcaca*(l.cabecas||0)) : null;
+  const carc = l.peso_medio_carcaca!=null? l.peso_medio_carcaca : '';
+  const rend = (l.peso_medio_carcaca!=null && l.peso_medio)? Math.round(l.peso_medio_carcaca/l.peso_medio*1000)/10 : null;
   return `<div class="card">
     <h3>🚚 ${esc(l.frigorifico)} <span class="muted" style="font-weight:400">· embarque ${fmtDate(l.data_embarque)}</span></h3>
     <div class="muted" style="margin:4px 0 10px">
-      Cabeças: <b>${l.cabecas??"—"}</b> · Peso médio: <b>${l.peso_medio!=null?l.peso_medio+" kg":"—"}</b> · Peso total: <b>${l.peso_total!=null?l.peso_total+" kg":"—"}</b>${l.peso_medio_carcaca!=null?` · Carcaça média: <b>${l.peso_medio_carcaca} kg</b> · Rend.: <b>${l.rendimento_pct}%</b>`:""}
-      ${rv.length?`<br>Veículos: ${rv.map(v=>`${esc(v.nome)} (${v.n}/${v.cap})`).join(" · ")}`:""}
+      Cabeças <b>${l.cabecas??"—"}</b> · Peso vivo médio <b>${l.peso_medio!=null?l.peso_medio+" kg":"—"}</b> · Peso vivo total <b>${l.peso_total!=null?l.peso_total+" kg":"—"}</b>${resumoLinhaVeic(l)}
     </div>
     <div class="grid">
-      <div class="field"><label>Valor por arroba (R$/@)</label><input id="va_arroba_${l.id}" type="number" step="0.01" placeholder="ex.: 320"></div>
-      <div class="field"><label>Base p/ cálculo</label><select id="va_base_${l.id}">
-        ${carcTotal!=null?`<option value="carcaca">Carcaça (${carcTotal} kg)</option>`:""}
-        <option value="vivo" selected>Peso vivo (${l.peso_total!=null?l.peso_total+" kg":"—"})</option>
-      </select></div>
-      <div class="field"><label>Valor total (R$)</label><input id="va_total_${l.id}" type="number" step="0.01" placeholder="ou informe direto"></div>
-      <div class="field"><label>Vencimento / pagamento</label><input id="va_venc_${l.id}" type="date"></div>
+      <div class="field"><label>Peso médio de carcaça (kg)</label><input id="va_carc_${l.id}" type="number" step="0.1" value="${carc}" oninput="calcVenda('${l.id}')" placeholder="informado pelo frigorífico"></div>
+      <div class="field"><label>Rendimento de carcaça</label><input id="va_rend_${l.id}" disabled value="${rend!=null?rend+' %':''}"></div>
+      <div class="field"><label>Base do preço</label><select id="va_base_${l.id}" onchange="calcVenda('${l.id}')"><option value="carcaca" selected>Arroba de carcaça</option><option value="vivo">Arroba de peso vivo</option></select></div>
+      <div class="field"><label>Preço por arroba (R$/@)</label><input id="va_arroba_${l.id}" type="number" step="0.01" oninput="calcVenda('${l.id}')" placeholder="ex.: 320"></div>
+      <div class="field"><label>Valor total (R$)</label><input id="va_total_${l.id}" type="number" step="0.01" oninput="this.dataset.man='1'" placeholder="calculado"></div>
+      <div class="field"><label>Vencimento / recebimento</label><input id="va_venc_${l.id}" type="date"></div>
+      <div class="field"><label>Nota fiscal do frigorífico (nº ou chave)</label><input id="va_nf_${l.id}" placeholder="opcional"></div>
+      <div class="field"><label>Vincular a título a receber do SINTEGRA</label><select id="va_tit_${l.id}">${tituloReceberOptions()}</select></div>
       <div class="field" style="grid-column:1/-1"><label>Observação</label><input id="va_obs_${l.id}" placeholder="opcional"></div>
     </div>
-    <button class="btn" onclick='concluirVenda("${l.id}")'>Concluir operação</button>
+    <div class="muted" id="va_prev_${l.id}" style="margin:2px 0 8px"></div>
+    <button class="btn" onclick='concluirVenda("${l.id}")'>Concluir venda → gera a receber</button>
   </div>`;
 }
-function renderVendas(c){
+function calcVenda(id){
+  const l=(L.lotes||[]).find(x=>x.id===id); if(!l) return;
+  const g=x=>document.getElementById(x+"_"+id);
+  const carc=parseFloat((g("va_carc")||{}).value)||null;
+  const base=(g("va_base")||{}).value||"carcaca";
+  const arroba=parseFloat((g("va_arroba")||{}).value)||null;
+  const rend = (carc!=null && l.peso_medio)? Math.round(carc/l.peso_medio*1000)/10 : null;
+  if(g("va_rend")) g("va_rend").value = rend!=null? rend+' %':'';
+  let kg = base==="carcaca" ? (carc!=null? carc*(l.cabecas||0):null) : (l.peso_total!=null?l.peso_total:null);
+  const arrobas = kg!=null? kg/15 : null;
+  const total = (arrobas!=null && arroba!=null)? Math.round(arrobas*arroba*100)/100 : null;
+  const tEl=g("va_total"); if(tEl && total!=null && tEl.dataset.man!=='1') tEl.value=total;
+  const prev=g("va_prev");
+  if(prev) prev.innerHTML = (arrobas!=null?`${(Math.round(arrobas*10)/10).toString().replace('.',',')} @ ${base==="carcaca"?"de carcaça":"de peso vivo"}`:"") + (total!=null?` × ${fmtBRL(arroba)}/@ = <b>${fmtBRL(total)}</b>`:"");
+}
+function tituloReceberOptions(){ let o='<option value="">— não vincular (gera a receber avulso) —</option>';
+  titulosFiscais().filter(t=>t.tipo_titulo==='receber' && !tituloPago(t)).slice(0,300).forEach(t=>{ o+=`<option value="${esc(t.id)}">${esc(t.contraparte_nome||'')} · ${esc((t.tipo_doc||'')+' '+(t.numero||''))} · ${fmtBRL(t.valor)}</option>`; }); return o; }
+function renderComercialVenda(){
+  const body=document.getElementById('com-body'); if(!body) return;
   const todos=(L.lotes||[]).filter(l=>l && l.tipo==="venda_abate");
   const aguard=todos.filter(l=>l.gestao_status==="aguardando_financeiro");
   const concl=todos.filter(l=>l.gestao_status==="concluido").sort((a,b)=>((b.gestao_concluido_em||"")<(a.gestao_concluido_em||"")?-1:1));
-  c.innerHTML=`
-  <div class="pgtitle">💵 Vendas — embarques para abate</div>
-  <div class="pgsub">Embarques enviados pelo app de campo. Lance os dados financeiros para concluir a operação.</div>
+  body.innerHTML=`
   ${aguard.length
-    ? `<div class="card" style="background:#fff8e6;border-color:#e6cf8a"><b>${aguard.length}</b> embarque(s) aguardando dados financeiros.</div>`+aguard.map(cardEmbarqueAguardando).join("")
-    : `<div class="card"><div class="muted">Nenhum embarque aguardando. Quando você fechar um embarque no app de campo, ele chega aqui automaticamente.</div></div>`}
-  ${concl.length? `<div class="card"><h3>Concluídos</h3>
-    <table><thead><tr><th>Data</th><th>Frigorífico</th><th>Cab.</th><th>Peso médio</th><th>R$/@</th><th>Total</th></tr></thead><tbody>
-    ${concl.map(l=>`<tr><td>${fmtDate(l.data_embarque)}</td><td>${esc(l.frigorifico)}</td><td>${l.cabecas??"—"}</td><td>${l.peso_medio!=null?l.peso_medio+" kg":"—"}</td><td>${l.gestao_valor_arroba!=null?fmtBRL(l.gestao_valor_arroba):"—"}</td><td class="money pos">${l.gestao_valor_total!=null?fmtBRL(l.gestao_valor_total):"—"}</td></tr>`).join("")}
-    </tbody></table></div>`:""}`;
+    ? `<div class="card" style="background:#fff8e6;border-color:#e6cf8a"><b>${aguard.length}</b> embarque(s) aguardando os dados financeiros.</div>`+aguard.map(cardEmbarqueAguardando).join("")
+    : `<div class="card"><div class="muted">Nenhum embarque aguardando. Feche um embarque no app de campo (🚚 Venda para abate) que ele chega aqui automaticamente.</div></div>`}
+  ${concl.length? `<div class="card"><h3>Vendas concluídas <span class="muted" style="font-weight:400">(${concl.length})</span></h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Frigorífico</th><th>Cab.</th><th>Peso vivo méd.</th><th>Carcaça méd.</th><th>Rend.</th><th>R$/@</th><th class="num">Total</th></tr></thead><tbody>
+    ${concl.map(l=>`<tr><td>${fmtDate(l.data_embarque)}</td><td><b>${esc(l.frigorifico)}</b></td><td>${l.cabecas??"—"}</td><td>${l.peso_medio!=null?l.peso_medio+" kg":"—"}</td><td>${l.peso_medio_carcaca!=null?l.peso_medio_carcaca+" kg":"—"}</td><td>${l.rendimento_pct!=null?l.rendimento_pct+"%":"—"}</td><td>${l.gestao_valor_arroba!=null?fmtBRL(l.gestao_valor_arroba):"—"}</td><td class="num money pos">${l.gestao_valor_total!=null?fmtBRL(l.gestao_valor_total):"—"}</td></tr>`).join("")}
+    </tbody></table></div></div>`:""}`;
 }
 async function concluirVenda(id){
   const lote=(L.lotes||[]).find(l=>l.id===id); if(!lote) return;
   const g=x=>document.getElementById(x+"_"+id);
+  const carc=parseFloat((g("va_carc")||{}).value)||null;
+  const base=g("va_base")?g("va_base").value:"carcaca";
   const arroba=(g("va_arroba")&&g("va_arroba").value)?parseFloat(g("va_arroba").value):null;
   let total=(g("va_total")&&g("va_total").value)?parseFloat(g("va_total").value):null;
-  const base=g("va_base")?g("va_base").value:"vivo";
   const venc=(g("va_venc")&&g("va_venc").value)?g("va_venc").value:null;
+  const nf=(g("va_nf")&&g("va_nf").value)?g("va_nf").value.trim():null;
+  const titId=(g("va_tit")&&g("va_tit").value)?g("va_tit").value:null;
   const obs=(g("va_obs")&&g("va_obs").value)?g("va_obs").value.trim():null;
+  const rend = (carc!=null && lote.peso_medio)? Math.round(carc/lote.peso_medio*1000)/10 : (lote.rendimento_pct??null);
   if(total==null && arroba!=null){
-    let kg=null;
-    if(base==="carcaca" && lote.peso_medio_carcaca!=null) kg=lote.peso_medio_carcaca*(lote.cabecas||0);
-    else if(lote.peso_total!=null) kg=lote.peso_total;
-    if(kg!=null) total=Math.round(kg/15*arroba*100)/100; // 1 arroba = 15 kg
+    let kg = base==="carcaca" ? (carc!=null?carc*(lote.cabecas||0):null) : (lote.peso_total!=null?lote.peso_total:null);
+    if(kg!=null) total=Math.round(kg/15*arroba*100)/100;
   }
-  if(total==null && arroba==null){ alert("Informe o valor por arroba ou o valor total."); return; }
+  if(total==null){ alert("Informe o preço por arroba (ou o valor total)."); return; }
   const novoDoc=Object.assign({}, lote); delete novoDoc.id;
-  novoDoc.gestao_status="concluido";
-  novoDoc.gestao_valor_arroba=arroba;
-  novoDoc.gestao_valor_total=(total!=null)?Math.round(total*100)/100:null;
-  novoDoc.gestao_base_peso=base;
-  novoDoc.gestao_vencimento=venc;
-  novoDoc.gestao_obs=obs;
-  novoDoc.gestao_concluido_em=new Date().toISOString();
+  Object.assign(novoDoc,{ gestao_status:"concluido", peso_medio_carcaca:(carc!=null?Math.round(carc*10)/10:(lote.peso_medio_carcaca??null)), rendimento_pct:rend,
+    status:(carc!=null?"finalizado":lote.status), gestao_valor_arroba:arroba, gestao_valor_total:Math.round(total*100)/100, gestao_base_peso:base,
+    gestao_vencimento:venc, gestao_nf:nf, gestao_titulo_id:titId, gestao_obs:obs, gestao_concluido_em:new Date().toISOString() });
   try{
     await reqWrite("PATCH", `/rest/v1/lotes?id=eq.${id}`, {doc:novoDoc});
-    Object.assign(lote, novoDoc);
-    render();
+    // gera a receber no Financeiro (a menos que você tenha vinculado a NF do SINTEGRA)
+    if(!titId){
+      const doc={ origem:'avulso', categoria:'venda_abate', lote_id:id, tipo_titulo:'receber', contraparte_nome:lote.frigorifico,
+        descricao:`Venda p/ abate — ${lote.frigorifico} (${lote.cabecas||0} cab${nf?', NF '+nf:''})`, valor:Math.round(total*100)/100,
+        data_emissao:new Date().toISOString().slice(0,10), vencimento:venc, rateio_tipo:'total', rateio:[], pago:false, atualizado_em:new Date().toISOString() };
+      const ex=(L.gestao_lancamentos||[]).find(x=>x.lote_id===id && x.categoria==='venda_abate');
+      if(ex) await reqWrite('PATCH', `/rest/v1/gestao_lancamentos?id=eq.${ex.id}`, {doc});
+      else await reqWrite('POST', `/rest/v1/gestao_lancamentos`, {doc});
+      await recarregarLancamentos();
+    }
+    await recarregarLotes(); render();
   }catch(e){ alert("Erro ao concluir: "+(e.message||e)); }
 }
+function renderComercialCompra(){
+  const body=document.getElementById('com-body'); if(!body) return;
+  const compras=(L.gestao_lancamentos||[]).filter(l=>l.categoria==='compra_animais').sort((a,b)=>String(b.data_emissao||'').localeCompare(String(a.data_emissao||'')));
+  body.innerHTML=`
+  <div class="card"><h3>Registrar compra de animais</h3>
+    <div class="pgsub" style="margin:-4px 0 10px">Animais descarregados e pesados na fazenda. Pague o lote por kg (peso vivo) ou por cabeça — gera uma conta a pagar.</div>
+    <div class="grid">
+      <div class="field"><label>Fornecedor / vendedor</label><input id="cp_forn"></div>
+      <div class="field"><label>Nº de cabeças</label><input id="cp_cab" type="number" min="1" oninput="calcCompra()"></div>
+      <div class="field"><label>Forma de preço</label><select id="cp_modo" onchange="calcCompra()"><option value="kg">Por kg (peso vivo)</option><option value="cab">Por cabeça</option></select></div>
+      <div class="field" id="cp_wrap_peso"><label>Peso total do lote (kg)</label><input id="cp_peso" type="number" step="0.1" oninput="calcCompra()"></div>
+      <div class="field"><label>Preço (R$/kg ou R$/cabeça)</label><input id="cp_preco" type="number" step="0.01" oninput="calcCompra()"></div>
+      <div class="field"><label>Valor total (R$)</label><input id="cp_total" type="number" step="0.01" oninput="this.dataset.man='1'" placeholder="calculado"></div>
+      <div class="field"><label>Vencimento / pagamento</label><input id="cp_venc" type="date"></div>
+      <div class="field"><label>Nota fiscal (nº ou chave)</label><input id="cp_nf" placeholder="opcional"></div>
+      <div class="field" style="grid-column:1/-1"><label>Observação</label><input id="cp_obs"></div>
+    </div>
+    <div class="muted" id="cp_prev" style="margin:2px 0 8px"></div>
+    <button class="btn" onclick="salvarCompraLote()">Registrar compra → gera a pagar</button>
+  </div>
+  ${compras.length?`<div class="card"><h3>Compras registradas <span class="muted" style="font-weight:400">(${compras.length})</span></h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Data</th><th>Fornecedor</th><th>Cab.</th><th>Preço</th><th class="num">Total</th><th>Venc.</th><th>Situação</th><th>Ação</th></tr></thead>
+    <tbody>${compras.map(l=>`<tr><td>${l.data_emissao?fmtDate(l.data_emissao):'—'}</td><td><b>${esc(l.contraparte_nome||'—')}</b></td><td>${l.compra_cabecas||'—'}</td><td>${l.compra_modo==='cab'?'por cabeça':'por kg'}</td><td class="num money neg">${fmtBRL(l.valor)}</td><td>${l.vencimento?fmtDate(l.vencimento):'—'}</td><td>${l.pago?'<span class="tag" style="background:#e1f4e6;color:#2e7d54">pago</span>':'<span class="tag" style="background:#fdf3e0;color:#9a6b1a">a pagar</span>'}</td><td><button class="btn ghost" style="padding:4px 8px" onclick='excluirCompraLote("${l.id}")'>Excluir</button></td></tr>`).join('')}</tbody></table></div>
+  </div>`:''}`;
+  calcCompra();
+}
+function calcCompra(){
+  const g=id=>document.getElementById(id);
+  const cab=parseInt((g('cp_cab')||{}).value)||0;
+  const modo=(g('cp_modo')||{}).value||'kg';
+  const peso=parseFloat((g('cp_peso')||{}).value)||0;
+  const preco=parseFloat((g('cp_preco')||{}).value)||0;
+  const wrap=g('cp_wrap_peso'); if(wrap) wrap.style.display = modo==='kg'?'':'none';
+  const total = modo==='kg'? peso*preco : cab*preco;
+  const tEl=g('cp_total'); if(tEl && tEl.dataset.man!=='1') tEl.value = total?Math.round(total*100)/100:'';
+  const prev=g('cp_prev'); if(prev) prev.innerHTML = total? (modo==='kg'?`${peso} kg × ${fmtBRL(preco)}/kg`:`${cab} cab × ${fmtBRL(preco)}/cab`)+` = <b>${fmtBRL(total)}</b>`:'';
+}
+async function salvarCompraLote(){
+  const g=id=>document.getElementById(id);
+  const forn=((g('cp_forn')||{}).value||'').trim();
+  const cab=parseInt((g('cp_cab')||{}).value)||null;
+  const modo=(g('cp_modo')||{}).value||'kg';
+  const peso=parseFloat((g('cp_peso')||{}).value)||null;
+  const preco=parseFloat((g('cp_preco')||{}).value)||null;
+  let total=parseFloat((g('cp_total')||{}).value)||null;
+  if(total==null){ total = modo==='kg'? (peso&&preco?peso*preco:null) : (cab&&preco?cab*preco:null); }
+  if(!total){ alert('Informe peso/cabeças e preço (ou o valor total).'); return; }
+  const venc=(g('cp_venc')||{}).value||null; const nf=((g('cp_nf')||{}).value||'').trim()||null; const obs=((g('cp_obs')||{}).value||'').trim()||null;
+  const doc={ origem:'avulso', categoria:'compra_animais', tipo_titulo:'pagar', contraparte_nome:forn||'Compra de animais',
+    descricao:`Compra de animais — ${cab||'?'} cab (${modo==='cab'?'por cabeça':'por kg'})${nf?' · NF '+nf:''}${obs?' · '+obs:''}`,
+    valor:Math.round(total*100)/100, data_emissao:new Date().toISOString().slice(0,10), vencimento:venc,
+    compra_cabecas:cab, compra_modo:modo, compra_peso:peso, compra_preco:preco, rateio_tipo:'total', rateio:[], pago:false, atualizado_em:new Date().toISOString() };
+  try{ await reqWrite('POST','/rest/v1/gestao_lancamentos',{doc}); await recarregarLancamentos(); render(); }
+  catch(e){ alert('Erro ao registrar compra: '+(e.message||e)); }
+}
+async function excluirCompraLote(id){ if(!confirm('Excluir este registro de compra? (a conta a pagar também sai)')) return;
+  try{ await reqWrite('DELETE',`/rest/v1/gestao_lancamentos?id=eq.${id}`); await recarregarLancamentos(); render(); }catch(e){ alert('Erro: '+(e.message||e)); } }
 
 // ===================== PASTAGEM =====================
 function calcPastagemG(p){ const area=parseFloat(p.area_ha)||0,cab=parseInt(p.cabecas)||0,pm=parseFloat(p.peso_medio)||0,pt=cab*pm,ua=pt/450; return {area,cab,pm,pt,ua,lot:area>0?ua/area:null,cabHa:area>0?cab/area:null}; }
