@@ -1037,6 +1037,7 @@ function optsFrom(list, sel){
   out+=list.map(x=>`<option value="${esc(x)}"${x===sel?" selected":""}>${esc(x)}</option>`).join("");
   return out;
 }
+function optProtocolosIatf(sel){ const lista=(LOCAL.protocolos||[]).filter(p=>p.tipo==="iatf"); let out=`<option value="">— sem protocolo —</option>`; lista.forEach(p=>{ out+=`<option value="${esc(p.id)}"${p.id===sel?" selected":""}>${esc(p.nome)}</option>`; }); return out; }
 function optRacas(sel){ return optsFrom((LOCAL.racas||[]).map(r=>r.nome).filter(Boolean), sel); }
 function optClass(sel){ return optsFrom((LOCAL.classificacoes||[]).map(r=>r.nome).filter(Boolean), sel); }
 function optVermifugos(sel){
@@ -1862,7 +1863,7 @@ function datalistSemen(){
   return `<datalist id="dl_semen">`+[...nomes].sort().map(n=>`<option value="${esc(n)}">`).join("")+`</datalist>`;
 }
 function coberturaTxt(c){
-  if(c.tipo==="iatf") return c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF";
+  if(c.tipo==="iatf"){ let s = c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF"; if(c.protocolo_nome) s+=" · "+esc(c.protocolo_nome); return s; }
   if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
   return "—";
 }
@@ -1933,6 +1934,7 @@ async function flowNovaReproducao(a,prox,ultimo){
     </div>
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
     <div class="field" id="rp_semen_wrap" style="margin-top:8px;display:none"><label>Sêmen / touro (IATF)</label><input id="rp_semen" list="dl_semen" placeholder="ex: Zero Um FIV da Jacamim">${datalistSemen()}</div>
+    <div class="field" id="rp_prot_wrap" style="margin-top:8px;display:none"><label>Protocolo IATF</label><select id="rp_prot">${optProtocolosIatf()}</select></div>
     </div>
     <div class="grid" style="margin-top:8px">
       <div class="field"><label>Diagnóstico</label><select id="rp_diag" onchange="toggleDiag()" style="background:#e1f4e6;color:#1f7a45;font-weight:700">
@@ -2026,6 +2028,7 @@ function toggleTipoCob(){
   const t=document.getElementById("rp_tipo").value;
   document.getElementById("rp_equipe_wrap").style.display = t==="touro"?"flex":"none";
   document.getElementById("rp_semen_wrap").style.display = t==="iatf"?"flex":"none";
+  const pw=document.getElementById("rp_prot_wrap"); if(pw) pw.style.display = t==="iatf"?"flex":"none";
   document.getElementById("rp_data_lbl").textContent = t==="iatf"?"Data da IATF":"Data / período da monta";
 }
 function toggleDiag(){
@@ -2056,6 +2059,8 @@ async function salvarReproducao(animalId,ciclo){
   } else {
     const nm=v("rp_semen")?v("rp_semen").value.trim():"";
     rec.touro_nome = nm||null; sireNome = nm||null;
+    const pid=v("rp_prot")?v("rp_prot").value:"";
+    if(pid){ const pr=(LOCAL.protocolos||[]).find(p=>p.id===pid); rec.protocolo_id=pid; rec.protocolo_nome=pr?pr.nome:null; }
   }
   const { data:novo, error } = await sb.from("reproducao").insert(rec);
   if(error) return toast("Erro: "+error.message,"err");
