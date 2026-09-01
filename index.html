@@ -1862,6 +1862,20 @@ function datalistSemen(){
   (LOCAL.reproducao||[]).filter(r=>r.tipo==="iatf" && r.touro_nome).forEach(r=>nomes.add(r.touro_nome));
   return `<datalist id="dl_semen">`+[...nomes].sort().map(n=>`<option value="${esc(n)}">`).join("")+`</datalist>`;
 }
+function optSemen(sel){
+  const centrais=(LOCAL.animais||[]).filter(a=>a.tipo==="touro" && !a.arquivado && a.procedencia==="central" && a.nome).map(t=>t.nome);
+  const usados=new Set(); (LOCAL.reproducao||[]).filter(r=>r.tipo==="iatf" && r.touro_nome).forEach(r=>usados.add(r.touro_nome));
+  const cenSet=new Set(centrais.map(n=>n.toLowerCase()));
+  const outros=[...usados].filter(n=>!cenSet.has(String(n).toLowerCase()));
+  let o=`<option value="">— escolha o sêmen / touro —</option>`;
+  if(centrais.length){ o+=`<optgroup label="Touros de central (sêmen)">`+centrais.slice().sort().map(n=>`<option value="${esc(n)}"${n===sel?" selected":""}>${esc(n)}</option>`).join("")+`</optgroup>`; }
+  if(outros.length){ o+=`<optgroup label="Já usados">`+outros.slice().sort().map(n=>`<option value="${esc(n)}"${n===sel?" selected":""}>${esc(n)}</option>`).join("")+`</optgroup>`; }
+  o+=`<option value="__outro__">➕ Outro (digitar)…</option>`;
+  return o;
+}
+function toggleSemenOutro(){ const s=document.getElementById("rp_semen_sel"), inp=document.getElementById("rp_semen"); if(!s||!inp) return;
+  if(s.value==="__outro__"){ inp.style.display="block"; inp.value=""; try{inp.focus();}catch(e){} }
+  else { inp.style.display="none"; inp.value=s.value; } }
 function coberturaTxt(c){
   if(c.tipo==="iatf"){ let s = c.touro_nome? ("IATF · "+esc(c.touro_nome)) : "IATF"; if(c.protocolo_nome) s+=" · "+esc(c.protocolo_nome); return s; }
   if(c.tipo==="touro") return c.equipe_nome? ("Equipe "+esc(c.equipe_nome)) : "Touro";
@@ -1933,7 +1947,7 @@ async function flowNovaReproducao(a,prox,ultimo){
       <div class="field"><label id="rp_data_lbl">Data / período da monta</label><input id="rp_data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
     <div class="field" id="rp_equipe_wrap" style="margin-top:8px"><label>Equipe de touro</label><select id="rp_equipe">${eqs}</select></div>
-    <div class="field" id="rp_semen_wrap" style="margin-top:8px;display:none"><label>Sêmen / touro (IATF)</label><input id="rp_semen" list="dl_semen" placeholder="ex: Zero Um FIV da Jacamim">${datalistSemen()}</div>
+    <div class="field" id="rp_semen_wrap" style="margin-top:8px;display:none"><label>Sêmen / touro (IATF)</label><select id="rp_semen_sel" onchange="toggleSemenOutro()">${optSemen('')}</select><input id="rp_semen" placeholder="digite o nome do sêmen / touro" style="margin-top:6px;display:none"></div>
     <div class="field" id="rp_prot_wrap" style="margin-top:8px;display:none"><label>Protocolo IATF</label><select id="rp_prot">${optProtocolosIatf()}</select></div>
     </div>
     <div class="grid" style="margin-top:8px">
