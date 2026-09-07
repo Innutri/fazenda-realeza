@@ -757,6 +757,7 @@ function renderPastagem(){
         <div class="field"><label>Cabeças</label><input id="pg_cab" type="number" inputmode="numeric" min="0"></div>
         <div class="field"><label>Peso médio (kg)</label><input id="pg_peso" type="number" step="0.1" inputmode="decimal"></div>
         <div class="field"><label>Produto / nutrição em uso</label><select id="pg_prod_sel" onchange="togglePgProdOutro()">${optNutricao("")}</select><input id="pg_prod" placeholder="digite o produto" style="margin-top:6px;display:none"></div>
+        <div class="field"><label>Dono dos animais</label><select id="pg_dono">${optDono("")}</select></div>
       </div>
       <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
       <div class="divider"></div>
@@ -788,6 +789,7 @@ function preencherLotacao(){
   const prod=p&&p.produto?String(p.produto):"";
   const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod");
   if(s&&inp){ if(prod && !NUTRICAO.includes(prod)){ s.value="__outro__"; inp.style.display="block"; inp.value=prod; } else { s.value=prod; inp.style.display="none"; inp.value=prod; } }
+  const ds=document.getElementById("pg_dono"); if(ds) ds.value=(p&&p.dono)?p.dono:"Fazenda Realeza";
 }
 async function salvarLotacaoPasto(){
   const id=(document.getElementById("pg_sel")||{}).value;
@@ -795,7 +797,8 @@ async function salvarLotacaoPasto(){
   const cabV=(document.getElementById("pg_cab")||{}).value;
   const pesoV=(document.getElementById("pg_peso")||{}).value;
   const prod=((document.getElementById("pg_prod")||{}).value||"").trim();
-  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null, produto: prod||null };
+  const dono=((document.getElementById("pg_dono")||{}).value||"").trim();
+  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null, produto: prod||null, dono: dono||null };
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   toast("Ocupação do pasto atualizada.","ok");
@@ -2370,6 +2373,30 @@ async function compartilharPastagem(){
   try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
   try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
 }
+function blocoPastoPorDono(ps){
+  const ocupados=(ps||[]).filter(p=>(parseInt(p.cabecas)||0)>0);
+  if(!ocupados.length) return `<p class="muted">Nenhum pasto com animais informados ainda. Atualize a ocupação (cabeças e dono) na aba 🌱 Pasto ou pelo microfone 🎤.</p>`;
+  const f1=v=>v==null?"—":(Math.round(v*10)/10).toString().replace(".",",");
+  const f2=v=>v==null?"—":(Math.round(v*100)/100).toString().replace(".",",");
+  const donoDoPasto=p=>p.dono||"Fazenda Realeza";
+  const grupos={}; ocupados.forEach(p=>{ const d=donoDoPasto(p); (grupos[d]||(grupos[d]=[])).push(p); });
+  let gC=0,gUA=0,gA=0;
+  const secoes=Object.keys(grupos).sort().map(d=>{
+    let sC=0,sUA=0,sA=0;
+    const rows=grupos[d].slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||""))).map(p=>{ const k=calcPastagem(p); sC+=k.cab; sUA+=k.ua; sA+=k.area;
+      return `<tr><td data-label="Pasto"><b>${esc(p.nome)||"—"}</b></td><td data-label="Cabeças"><b>${k.cab||"—"}</b></td><td data-label="Peso méd.">${k.pm?f1(k.pm):"—"}</td><td data-label="U.A.">${k.pesoTotal?f1(k.ua):"—"}</td><td data-label="Lotação (U.A./ha)">${(k.lotUA!=null&&k.pesoTotal)?f2(k.lotUA):"—"}</td></tr>`; }).join("");
+    gC+=sC; gUA+=sUA; gA+=sA; const lot=sA>0?sUA/sA:null;
+    return `<h4 style="margin:16px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--verde2)">${esc(d)} — ${sC} cabeça(s) em ${grupos[d].length} pasto(s)</h4>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="font-weight:800;background:#f6f8f5"><td data-label="Pasto">Subtotal ${esc(d)}</td><td data-label="Cabeças">${sC}</td><td data-label="Peso méd.">—</td><td data-label="U.A.">${f1(sUA)}</td><td data-label="Lotação (U.A./ha)">${lot!=null?f2(lot):"—"}</td></tr></tfoot></table></div>`;
+  }).join("");
+  const lotG=gA>0?gUA/gA:null;
+  return secoes+`<div class="gmdbox" style="margin-top:16px">
+    <div class="gmd-item"><span class="gmd-lbl">Geral — cabeças</span><span class="gmd-val">${gC}</span><span class="gmd-sub">em ${ocupados.length} pasto(s) ocupado(s)</span></div>
+    <div class="gmd-item"><span class="gmd-lbl">Lotação geral</span><span class="gmd-val">${lotG!=null?f2(lotG):"—"}</span><span class="gmd-sub">U.A./ha · ${f1(gA)} ha ocupados · ${f1(gUA)} U.A.</span></div>
+  </div>`;
+}
 function renderRelatorioPastagem(){
   const body=$("#rel-body");
   const ps=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
@@ -2402,7 +2429,8 @@ function renderRelatorioPastagem(){
       <button class="btn" style="width:auto" onclick="compartilharPastagem()">📲 Compartilhar (WhatsApp)</button>
       <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
     </div>`:""}
-  </div>`;
+  </div>
+  ${ps.length?`<div class="card" id="rel-pasto-dono"><h3>Ocupação por dono</h3><p class="muted">Separado por dono dos animais (José da Lamarta × Fazenda Realeza) e o geral com lotação.</p>${blocoPastoPorDono(ps)}</div>`:""}`;
 }
 function fmtDateTime(iso){ if(!iso) return "—"; if(/^\d{4}-\d{2}-\d{2}$/.test(iso)) return fmtDate(iso); const d=new Date(iso); if(isNaN(d.getTime())) return "—"; const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function ordemDe(r){ const n=parseInt(String(r.id||"").replace(/\D/g,"")); return isNaN(n)?0:n; }
@@ -2999,7 +3027,8 @@ function parseVoz(texto){
     else if(/(terceira|3a)\s*ger/.test(t)) nutri="3G";
     else if(/mineral/.test(t)) nutri="Mineral";
     else if(/resist/.test(t)) nutri="Resist";
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, texto:raw};
+    let dono=null; if(/jose|lamarta/.test(t)) dono="José da Lamarta"; else if(/fazenda|realeza/.test(t)) dono="Fazenda Realeza";
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3048,6 +3077,7 @@ function vozProcessar(txt){
       <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
       <div class="field"><label>Peso médio (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
       <div class="field"><label>Produto / nutrição</label><select id="vz_prod">${optNutricaoSimples(p.nutri||"")}</select></div>
+      <div class="field"><label>Dono dos animais</label><select id="vz_pdono">${optDono(p.dono||"")}</select></div>
     </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b> (informativo — a ocupação guarda cabeças, peso e produto).</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
   } else if(p.intent==="pesagem"){
     vozCard(`${diss}<div class="grid">
@@ -3077,6 +3107,7 @@ async function vozExecPasto(){
   const cabV=(document.getElementById("vz_cab")||{}).value, pesoV=(document.getElementById("vz_peso")||{}).value;
   const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null };
   const prodV=(document.getElementById("vz_prod")||{}).value; if(prodV) upd.produto=prodV;
+  const pdonoV=(document.getElementById("vz_pdono")||{}).value; if(pdonoV) upd.dono=pdonoV;
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   const p=(LOCAL.pastos||[]).find(x=>x.id===id);
