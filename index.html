@@ -762,7 +762,7 @@ function renderPastagem(){
         <div class="field"><label>Produto / nutrição em uso</label><select id="pg_prod_sel" onchange="togglePgProdOutro()">${optNutricao("")}</select><input id="pg_prod" placeholder="digite o produto" style="margin-top:6px;display:none"></div>
         <div class="field"><label>Dono dos animais</label><select id="pg_dono">${optDono("")}</select></div>
       </div>
-      <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
+      <div class="actions" style="gap:8px;flex-wrap:wrap"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button><button class="btn sec" style="width:auto" onclick="esvaziarPasto()">Esvaziar pasto</button></div>
       <div class="divider"></div>
       <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th></tr></thead>
       <tbody>${linhas}</tbody>
@@ -817,6 +817,16 @@ async function salvarLotacaoPasto(){
   if(error) return toast("Erro: "+msgErro(error),"err");
   toast("Ocupação do pasto atualizada.","ok");
   renderPastagem();
+}
+async function esvaziarPasto(){
+  const id=(document.getElementById("pg_sel")||{}).value;
+  if(!id) return toast("Escolha um pasto.","err");
+  const p=(LOCAL.pastos||[]).find(x=>x.id===id);
+  if(!confirm(`Esvaziar o pasto "${(p&&p.nome)||""}"?\nIsso limpa cabeças, peso, sexo, dono e produto. A área e o nome são mantidos.`)) return;
+  const { error } = await sb.from("pastos").update({ cabecas:null, peso_medio:null, sexo:null, dono:null, produto:null }).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast("Pasto esvaziado.","ok");
+  preencherLotacao(); renderPastagem();
 }
 function irParaCadastroPasto(){
   state.tab="cadastros"; state.sub=state.sub||{}; state.sub.outros="pastos";
@@ -3038,6 +3048,7 @@ async function salvarEdicao(id, tipo, silent){
 // Fala -> transcrição (Web Speech pt-BR) -> interpreta -> confirma -> salva
 // ============================================================
 let vozRec=null, vozTextoAtual="", vozCancelado=false, vozPararSolic=false;
+let vozCommitted="", vozCurrent="", vozEditando=false;
 function vozSuportado(){ return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window); }
 function ciclosDe(animalId){ return (LOCAL.reproducao||[]).filter(r=>r.animal_id===animalId).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); }
 function achaAnimalNum(n){ const num=parseInt(n,10); return (LOCAL.animais||[]).find(a=>!a.arquivado && a.numero===num)||null; }
@@ -3081,12 +3092,14 @@ function parseVoz(texto){
     else if(/(terceira|3a)\s*ger/.test(t)) nutri="3G";
     else if(/mineral/.test(t)) nutri="Mineral";
     else if(/resist/.test(t)) nutri="Resist";
-    let dono=null; if(/jose|lamarta/.test(t)) dono="José da Lamarta"; else if(/fazenda|realeza/.test(t)) dono="Fazenda Realeza";
+    let dono=null; if(/jose|lamar/.test(t)) dono="José da Lamarta"; else if(/fazenda|realeza/.test(t)) dono="Fazenda Realeza";
     let sexo=null;
     const temF=/\b(femea|femeas|vaca|vacas|novilha|novilhas|bezerra|bezerras)\b/.test(t);
     const temM=/\b(macho|machos|boi|bois|touro|touros|garrote|garrotes|novilho|novilhos|bezerro|bezerros)\b/.test(t);
     if(temF&&temM) sexo="Misto"; else if(temF) sexo="Fêmea"; else if(temM) sexo="Macho";
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, texto:raw};
+    // "pasto X vazio / desocupado / esvaziar / sem animais" -> limpar ocupação do pasto
+    const vazio=/\bvazi[oa]\b|desocupad|esvazi|sem\s+anima|tirei\s+os|sairam|saiu\s+tudo|\blimpar\b|\blimpo\b/.test(t);
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, vazio, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3130,6 +3143,11 @@ function vozProcessar(txt){
   if(p.intent==="pasto"){
     const mid=(matchPastoByNum(p.pastoNum)||{}).id||"";
     const opt=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||""))).map(x=>`<option value="${x.id}"${x.id===mid?" selected":""}>${esc(x.nome)||"(sem nome)"}</option>`).join("");
+    if(p.vazio){
+      vozCard(`${diss}<div class="field"><label>Pasto para esvaziar</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
+        <p class="alerta-mini" style="background:#fdeaea;border-color:#e0b4b4;color:#b23b3b;margin-top:8px">⚠️ Vai <b>limpar a ocupação</b> deste pasto: cabeças, peso, sexo, dono e produto voltam a ficar vazios. A área e o nome do pasto são mantidos.</p>${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPastoVazio");
+      return;
+    }
     vozCard(`${diss}<div class="grid">
       <div class="field"><label>Pasto</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
       <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
@@ -3178,6 +3196,15 @@ async function vozExecPasto(){
   toast(`Pasto ${p?(p.nome||""):""} atualizado: ${upd.cabecas??"—"} cab · ${upd.peso_medio??"—"} kg.`,"ok");
   fecharModal(); render();
 }
+async function vozExecPastoVazio(){
+  const id=(document.getElementById("vz_pasto")||{}).value; if(!id) return toast("Escolha o pasto.","err");
+  const p=(LOCAL.pastos||[]).find(x=>x.id===id);
+  // Limpa a ocupação (mantém nome, área, forragem)
+  const { error } = await sb.from("pastos").update({ cabecas:null, peso_medio:null, sexo:null, dono:null, produto:null }).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast(`Pasto ${p?(p.nome||""):""} esvaziado.`,"ok");
+  fecharModal(); render();
+}
 async function vozExecPeso(){
   const num=parseInt((document.getElementById("vz_animal")||{}).value); const a=achaAnimalNum(num);
   if(!a) return toast(`Animal nº ${num||"?"} não encontrado.`,"err");
@@ -3224,42 +3251,55 @@ async function vozExecDiag(){
   if(!prenhe) checarAlertaVazia(a.id);
   fecharModal(); render();
 }
-function vozOverlay(show){ const ov=document.getElementById("voz-ov"); if(!ov) return; ov.classList.toggle("show",!!show); if(show){ vozTextoAtual=""; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent="…"; } }
-function vozSetTexto(t){ vozTextoAtual=t; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent=t||"…"; }
+function vozTextoTotal(){ return ((vozCommitted+" "+vozCurrent).trim()).replace(/\s+/g," "); }
+function vozOverlay(show){ const ov=document.getElementById("voz-ov"); if(!ov) return; ov.classList.toggle("show",!!show); if(show){ vozTextoAtual=""; vozEditando=false; const tx=document.getElementById("voz-txt"); if(tx) tx.value=""; } }
+function vozSetTexto(t){ vozTextoAtual=t; if(vozEditando) return; const tx=document.getElementById("voz-txt"); if(tx && document.activeElement!==tx) tx.value=t||""; }
+// Usuário editou manualmente o texto reconhecido: para de sobrescrever e usa o que ele digitou
+function vozEditarManual(v){ vozEditando=true; vozTextoAtual=v; }
 function vozCancelar(){ vozCancelado=true; if(vozRec){ try{ vozRec.abort(); }catch(_){} } vozOverlay(false); }
-function vozParar(){ vozPararSolic=true; if(vozRec){ try{ vozRec.stop(); }catch(_){} } }
+function vozParar(){ vozPararSolic=true; if(vozRec){ try{ vozRec.stop(); }catch(_){} } else { _vozFinalizar(); } }
+function _vozFinalizar(){
+  vozPararSolic=false; vozOverlay(false);
+  const tx=document.getElementById("voz-txt");
+  const txt=(vozEditando && tx)?(tx.value||"").trim():vozTextoTotal();
+  if(txt) vozProcessar(txt);
+}
+// Reabre a escuta a cada pausa/silêncio com uma nova instância: o microfone fica ligado
+// até o usuário tocar em "✓ Terminei" (ou Cancelar). Aceita falas bem espaçadas, sem duplicar.
+function _vozStart(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const rec=new SR(); vozRec=rec; vozCurrent="";
+  rec.lang="pt-BR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
+  // Reconstrói SEMPRE do array completo desta instância (nunca soma incremental) -> sem repetição
+  rec.onresult=(e)=>{ let txt=""; for(let i=0;i<e.results.length;i++){ txt+=e.results[i][0].transcript+" "; } vozCurrent=txt.trim(); vozSetTexto(vozTextoTotal()); };
+  rec.onerror=(e)=>{ const m=(e&&e.error)||"";
+    if(vozCancelado){ vozOverlay(false); return; }
+    if(m==="not-allowed"||m==="service-not-allowed"){ vozPararSolic=true; vozOverlay(false); toast("Permita o microfone para o app no navegador.","err"); return; }
+    // no-speech / aborted / network / audio-capture: deixa o onend reabrir a escuta (dá mais tempo)
+  };
+  rec.onend=()=>{
+    // fecha esta instância: guarda o que foi reconhecido e zera o corrente
+    if(vozCurrent){ vozCommitted=((vozCommitted+" "+vozCurrent).trim()).replace(/\s+/g," "); vozCurrent=""; }
+    if(vozCancelado){ vozCancelado=false; vozOverlay(false); return; }
+    if(!vozPararSolic){ setTimeout(()=>{ if(!vozCancelado && !vozPararSolic){ try{ _vozStart(); }catch(_){ vozOverlay(false); } } }, 150); return; }
+    _vozFinalizar();
+  };
+  try{ rec.start(); }catch(_){ /* já iniciando: ignora */ }
+}
 function vozIniciar(){
   if(!vozSuportado()){ toast("Seu navegador não reconhece voz. Abra no Chrome do Android.","err"); return; }
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  const rec=new SR(); vozRec=rec; vozCancelado=false; vozPararSolic=false;
-  // continuous=true: NÃO finaliza no primeiro silêncio — só processa quando o usuário toca em "✓ Usar"
-  rec.lang="pt-BR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
-  let finalTxt="";
+  vozCancelado=false; vozPararSolic=false; vozCommitted=""; vozCurrent=""; vozEditando=false;
   vozOverlay(true);
-  rec.onresult=(e)=>{ let interim=""; for(let k=e.resultIndex;k<e.results.length;k++){ const r=e.results[k]; if(r.isFinal) finalTxt+=r[0].transcript+" "; else interim+=r[0].transcript; } vozSetTexto((finalTxt+interim).trim()); };
-  rec.onerror=(e)=>{ const m=(e&&e.error)||""; if(vozCancelado){ vozOverlay(false); return; }
-    if(m==="no-speech"){ return; } // silêncio: deixa o onend reabrir a escuta, dá mais tempo
-    vozOverlay(false);
-    if(m==="not-allowed"||m==="service-not-allowed") toast("Permita o microfone para o app no navegador.","err");
-    else if(m!=="aborted") toast("Erro de voz: "+m,"err"); };
-  rec.onend=()=>{
-    if(vozCancelado){ vozCancelado=false; vozOverlay(false); return; }
-    if(!vozPararSolic){ // o navegador encerrou sozinho (pausa/silêncio): reabre para dar mais tempo
-      try{ rec.start(); return; }catch(_){}
-    }
-    vozOverlay(false); vozPararSolic=false;
-    const txt=(finalTxt||vozTextoAtual||"").trim(); if(txt) vozProcessar(txt);
-  };
-  try{ rec.start(); }catch(_){ vozOverlay(false); }
+  _vozStart();
 }
 (function(){
   try{
     const st=document.createElement("style");
-    st.textContent="#voz-fab{position:fixed;right:16px;bottom:20px;z-index:80;width:60px;height:60px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--verde-esc),var(--verde2));color:#fff;font-size:26px;box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;justify-content:center}#voz-fab:active{transform:scale(.94)}#voz-ov{position:fixed;inset:0;background:rgba(21,31,25,.85);z-index:120;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:#fff}#voz-ov.show{display:flex}#voz-ov .mic{width:88px;height:88px;border-radius:50%;background:#e14b4b;display:flex;align-items:center;justify-content:center;font-size:42px;animation:vozpulse 1.2s infinite}@keyframes vozpulse{0%{box-shadow:0 0 0 0 rgba(225,75,75,.6)}70%{box-shadow:0 0 0 26px rgba(225,75,75,0)}100%{box-shadow:0 0 0 0 rgba(225,75,75,0)}}#voz-ov #voz-txt{font-size:22px;font-weight:700;min-height:30px;max-width:620px;line-height:1.3}#voz-ov .vbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px}#voz-ov .vbtns button{border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:800;cursor:pointer}#voz-ov .vok{background:var(--ouro);color:#3a2f10}#voz-ov .vcancel{background:rgba(255,255,255,.18);color:#fff}#voz-ov .vhint{max-width:540px;font-size:12.5px;opacity:.75;line-height:1.5}";
+    st.textContent="#voz-fab{position:fixed;right:16px;bottom:20px;z-index:80;width:60px;height:60px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--verde-esc),var(--verde2));color:#fff;font-size:26px;box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;justify-content:center}#voz-fab:active{transform:scale(.94)}#voz-ov{position:fixed;inset:0;background:rgba(21,31,25,.85);z-index:120;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:#fff}#voz-ov.show{display:flex}#voz-ov .mic{width:88px;height:88px;border-radius:50%;background:#e14b4b;display:flex;align-items:center;justify-content:center;font-size:42px;animation:vozpulse 1.2s infinite}@keyframes vozpulse{0%{box-shadow:0 0 0 0 rgba(225,75,75,.6)}70%{box-shadow:0 0 0 26px rgba(225,75,75,0)}100%{box-shadow:0 0 0 0 rgba(225,75,75,0)}}#voz-ov #voz-txt{font-size:20px;font-weight:700;width:min(620px,90vw);min-height:64px;line-height:1.3;border-radius:12px;border:2px solid rgba(255,255,255,.35);background:#fff;color:#1c2b22;padding:12px 14px;resize:vertical;font-family:inherit;text-align:left}#voz-ov #voz-txt:focus{outline:none;border-color:var(--ouro)}#voz-ov .vbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px}#voz-ov .vbtns button{border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:800;cursor:pointer}#voz-ov .vok{background:var(--ouro);color:#3a2f10}#voz-ov .vcancel{background:rgba(255,255,255,.18);color:#fff}#voz-ov .vhint{max-width:540px;font-size:12.5px;opacity:.75;line-height:1.5}";
     document.head.appendChild(st);
     const fab=document.createElement("button"); fab.id="voz-fab"; fab.type="button"; fab.title="Cadastrar por voz"; fab.textContent="🎤"; fab.onclick=vozIniciar; document.body.appendChild(fab);
     const ov=document.createElement("div"); ov.id="voz-ov";
-    ov.innerHTML='<div class="mic">🎤</div><div style="font-size:15px;opacity:.9">Ouvindo… fale com calma</div><div id="voz-txt">…</div><div class="vbtns"><button class="vok" type="button" onclick="vozParar()">✓ Terminei</button><button class="vcancel" type="button" onclick="vozCancelar()">✕ Cancelar</button></div><p class="vhint">Pode falar pausado — só vai processar quando você tocar em <b>✓ Terminei</b>. Ex.: “pasto 1 entrou 340 cabeças com 280 quilos de média” · “novilha 345 pariu” · “animal 320 pesou 415 quilos” · “vaca 210 prenha”</p>';
+    ov.innerHTML='<div class="mic">🎤</div><div style="font-size:15px;opacity:.9">Ouvindo… fale com calma</div><textarea id="voz-txt" rows="2" placeholder="O que você falar aparece aqui — pode corrigir antes de salvar" oninput="vozEditarManual(this.value)"></textarea><div class="vbtns"><button class="vok" type="button" onclick="vozParar()">✓ Terminei</button><button class="vcancel" type="button" onclick="vozCancelar()">✕ Cancelar</button></div><p class="vhint">Pode falar pausado — só processa quando tocar em <b>✓ Terminei</b>. Se o microfone errar uma palavra, <b>toque no texto e corrija</b> antes de salvar. Ex.: “pasto 1 entrou 340 cabeças com 280 quilos de média” · “novilha 345 pariu” · “animal 320 pesou 415 quilos” · “vaca 210 prenha”</p>';
     document.body.appendChild(ov);
   }catch(_){}
 })();
