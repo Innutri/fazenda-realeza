@@ -741,6 +741,7 @@ function renderPastagem(){
       <td data-label="Lotação (U.A./ha)"><b>${(c.lotUA!=null&&c.pesoTotal)?f2(c.lotUA):"—"}</b></td>
       <td data-label="Cab/ha">${(c.cabHa!=null&&c.cab)?f2(c.cabHa):"—"}</td>
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
+      <td data-label="Dono">${(c.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
     </tr>`;
   }).join("");
   const lotGeral = tArea>0? tUA/tArea : null;
@@ -761,7 +762,7 @@ function renderPastagem(){
       </div>
       <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
       <div class="divider"></div>
-      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th></tr></thead>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr style="font-weight:800;background:#f0f5f1">
         <td data-label="Pasto">TOTAL / MÉDIA</td>
@@ -772,6 +773,7 @@ function renderPastagem(){
         <td data-label="Lotação (U.A./ha)">${(lotGeral!=null&&tUA)?f2(lotGeral):"—"}</td>
         <td data-label="Cab/ha">${(tArea>0&&tCab)?f2(tCab/tArea):"—"}</td>
         <td data-label="Produto">—</td>
+        <td data-label="Dono">—</td>
       </tr></tfoot></table></div>
       <p class="muted" style="margin-top:10px;font-size:12.5px">U.A. do pasto = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
       `:`<div class="empty">Nenhum pasto cadastrado ainda. Os pastos são cadastrados no <b>app de gestão</b> (Gerencial › Pastagem). Aqui no campo você atualiza a ocupação.</div>`}
@@ -2356,15 +2358,51 @@ function renderRelatorios(){
   bindSub();
   if(sub==="ultimos") renderUltimosRegistros(); else if(sub==="pastagem") renderRelatorioPastagem(); else gerarRelatorio();
 }
+function barraTexto(pct, n){ n=n||10; pct=Math.max(0,Math.min(100,pct||0)); const c=Math.round(pct/100*n); return "█".repeat(c)+"░".repeat(Math.max(0,n-c)); }
 function textoRelatorioPastagem(){
-  const ps=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||"")));
-  let tC=0,tUA=0,tA=0;
-  let t=`*RELATÓRIO DE PASTAGEM*\n${fmtDate(new Date().toISOString().slice(0,10))}\n\n`;
-  ps.forEach(p=>{const k=calcPastagem(p);tC+=k.cab;tUA+=k.ua;tA+=k.area;
-    t+=`• ${p.nome||"—"} — ${k.area?k.area+" ha":"s/ área"} · ${k.cab||0} cab · ${k.pm||0} kg\n   U.A. ${k.pesoTotal?Math.round(k.ua*10)/10:"—"} · lotação ${(k.lotUA!=null&&k.pesoTotal)?Math.round(k.lotUA*100)/100:"—"} U.A./ha${p.produto?` · ${p.produto}`:""}\n`;});
-  const lotG=tA>0?tUA/tA:null;
-  t+=`\nTOTAL: ${tA?Math.round(tA*10)/10:0} ha · ${tC} cab · U.A. ${Math.round(tUA*10)/10} · lotação geral ${lotG!=null?Math.round(lotG*100)/100:"—"} U.A./ha`;
-  t+=`\n\n— Fazenda Realeza`;
+  const nf1=v=>(Math.round((v||0)*10)/10).toString().replace(".",",");
+  const nf2=v=>(Math.round((v||0)*100)/100).toString().replace(".",",");
+  const ps=(LOCAL.pastos||[]);
+  const manejo=ps.filter(p=>String(p.nome||"")!=="Campo Nativo");
+  const nativo=ps.filter(p=>String(p.nome||"")==="Campo Nativo");
+  const areaManejo=manejo.reduce((s,p)=>s+(parseFloat(p.area_ha)||0),0);
+  const areaNativo=nativo.reduce((s,p)=>s+(parseFloat(p.area_ha)||0),0);
+  const ocupados=manejo.filter(p=>(parseInt(p.cabecas)||0)>0);
+  let tC=0,tUA=0,tAoc=0; ocupados.forEach(p=>{ const k=calcPastagem(p); tC+=k.cab; tUA+=k.ua; tAoc+=k.area; });
+  const lotG=tAoc>0?tUA/tAoc:null;
+
+  let t=`🌱 *FAZENDA REALEZA — PASTAGEM*\n`;
+  t+=`📅 ${fmtDate(new Date().toISOString().slice(0,10))}\n`;
+  t+=`_1 U.A. = 450 kg de peso vivo_\n\n`;
+
+  t+=`*📊 RESUMO*\n`;
+  t+=`• Pastos de manejo: *${manejo.length}*  ·  *${nf1(areaManejo)} ha*\n`;
+  if(nativo.length) t+=`• Campo nativo: ${nf1(areaNativo)} ha\n`;
+  t+=`• Animais nos pastos: *${tC}* cab\n`;
+  t+=`• Lotação geral: *${lotG!=null?nf2(lotG):"—"}* U.A./ha\n`;
+
+  if(ocupados.length){
+    const grupos={}; ocupados.forEach(p=>{ const d=p.dono||"Fazenda Realeza"; (grupos[d]||(grupos[d]=[])).push(p); });
+    t+=`\n*👥 POR DONO*\n`;
+    Object.keys(grupos).sort().forEach(d=>{
+      let sC=0; grupos[d].forEach(p=>sC+=parseInt(p.cabecas)||0);
+      const pct=tC?Math.round(sC/tC*100):0;
+      t+=`${d} — *${sC}* cab (${pct}%)\n${barraTexto(pct)}\n`;
+    });
+    t+=`\n*🐂 PASTOS COM ANIMAIS*\n`;
+    ocupados.slice().sort((a,b)=>(parseInt(b.cabecas)||0)-(parseInt(a.cabecas)||0)).forEach(p=>{
+      const k=calcPastagem(p);
+      t+=`• *${p.nome||"—"}*: *${k.cab}* cab`;
+      if(k.pm) t+=` · ${nf1(k.pm)} kg`;
+      if(k.lotUA!=null&&k.pesoTotal) t+=` · lot ${nf2(k.lotUA)}`;
+      let extra=[]; if(p.dono) extra.push(p.dono); if(p.produto) extra.push(p.produto);
+      if(extra.length) t+=`\n   ↳ ${extra.join(" · ")}`;
+      t+=`\n`;
+    });
+  } else {
+    t+=`\n_Nenhum pasto com animais informados ainda. Atualize a ocupação (cabeças e dono) na aba 🌱 Pasto ou pelo microfone 🎤._\n`;
+  }
+  t+=`\n— Fazenda Realeza 👑`;
   return t;
 }
 async function compartilharPastagem(){
@@ -2413,6 +2451,7 @@ function renderRelatorioPastagem(){
       <td data-label="Lotação (U.A./ha)"><b>${(k.lotUA!=null&&k.pesoTotal)?f2(k.lotUA):"—"}</b></td>
       <td data-label="Cab/ha">${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td>
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
+      <td data-label="Dono">${(k.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
     </tr>`;}).join("");
   const lotG=tA>0?tUA/tA:null;
   body.innerHTML=`<div class="card">
@@ -2420,9 +2459,9 @@ function renderRelatorioPastagem(){
     <div id="print-area">
       <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
       <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
-      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th></tr></thead>
+      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td></tr></tfoot>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td></tr></tfoot>
       </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
     </div>
     ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
