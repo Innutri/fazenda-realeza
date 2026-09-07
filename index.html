@@ -742,6 +742,7 @@ function renderPastagem(){
       <td data-label="Cab/ha">${(c.cabHa!=null&&c.cab)?f2(c.cabHa):"—"}</td>
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
       <td data-label="Dono">${(c.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
+      <td data-label="Sexo">${(c.cab>0)?(esc(p.sexo)||"—"):"—"}</td>
     </tr>`;
   }).join("");
   const lotGeral = tArea>0? tUA/tArea : null;
@@ -757,12 +758,13 @@ function renderPastagem(){
         <div class="field"><label>Pasto</label><select id="pg_sel" onchange="preencherLotacao()"><option value="">— escolha —</option>${optPastos}</select></div>
         <div class="field"><label>Cabeças</label><input id="pg_cab" type="number" inputmode="numeric" min="0"></div>
         <div class="field"><label>Peso médio (kg)</label><input id="pg_peso" type="number" step="0.1" inputmode="decimal"></div>
+        <div class="field"><label>Sexo dos animais</label><select id="pg_sexo">${optSexo("")}</select></div>
         <div class="field"><label>Produto / nutrição em uso</label><select id="pg_prod_sel" onchange="togglePgProdOutro()">${optNutricao("")}</select><input id="pg_prod" placeholder="digite o produto" style="margin-top:6px;display:none"></div>
         <div class="field"><label>Dono dos animais</label><select id="pg_dono">${optDono("")}</select></div>
       </div>
       <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
       <div class="divider"></div>
-      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th></tr></thead>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr style="font-weight:800;background:#f0f5f1">
         <td data-label="Pasto">TOTAL / MÉDIA</td>
@@ -774,6 +776,7 @@ function renderPastagem(){
         <td data-label="Cab/ha">${(tArea>0&&tCab)?f2(tCab/tArea):"—"}</td>
         <td data-label="Produto">—</td>
         <td data-label="Dono">—</td>
+        <td data-label="Sexo">—</td>
       </tr></tfoot></table></div>
       <p class="muted" style="margin-top:10px;font-size:12.5px">U.A. do pasto = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
       `:`<div class="empty">Nenhum pasto cadastrado ainda. Os pastos são cadastrados no <b>app de gestão</b> (Gerencial › Pastagem). Aqui no campo você atualiza a ocupação.</div>`}
@@ -792,6 +795,7 @@ function preencherLotacao(){
   const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod");
   if(s&&inp){ if(prod && !NUTRICAO.includes(prod)){ s.value="__outro__"; inp.style.display="block"; inp.value=prod; } else { s.value=prod; inp.style.display="none"; inp.value=prod; } }
   const ds=document.getElementById("pg_dono"); if(ds) ds.value=(p&&p.dono)?p.dono:"Fazenda Realeza";
+  const sx=document.getElementById("pg_sexo"); if(sx) sx.value=(p&&p.sexo)?p.sexo:"";
 }
 async function salvarLotacaoPasto(){
   const id=(document.getElementById("pg_sel")||{}).value;
@@ -800,7 +804,15 @@ async function salvarLotacaoPasto(){
   const pesoV=(document.getElementById("pg_peso")||{}).value;
   const prod=((document.getElementById("pg_prod")||{}).value||"").trim();
   const dono=((document.getElementById("pg_dono")||{}).value||"").trim();
-  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null, produto: prod||null, dono: dono||null };
+  const sexo=((document.getElementById("pg_sexo")||{}).value||"").trim();
+  // Só grava o campo que foi preenchido: campo vazio preserva o valor já salvo (não apaga outras células)
+  const upd={};
+  if(cabV!=="") upd.cabecas=parseInt(cabV);
+  if(pesoV!=="") upd.peso_medio=parseFloat(pesoV);
+  if(prod!=="") upd.produto=prod;
+  if(dono!=="") upd.dono=dono;
+  if(sexo!=="") upd.sexo=sexo;
+  if(!Object.keys(upd).length) return toast("Nada para atualizar.","err");
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   toast("Ocupação do pasto atualizada.","ok");
@@ -1051,6 +1063,8 @@ function optsFrom(list, sel){
 }
 function optProtocolosIatf(sel){ const lista=(LOCAL.protocolos||[]).filter(p=>p.tipo==="iatf"); let out=`<option value="">— sem protocolo —</option>`; lista.forEach(p=>{ out+=`<option value="${esc(p.id)}"${p.id===sel?" selected":""}>${esc(p.nome)}</option>`; }); return out; }
 function optRacas(sel){ return optsFrom((LOCAL.racas||[]).map(r=>r.nome).filter(Boolean), sel); }
+const SEXOS=["Fêmea","Macho","Misto"];
+function optSexo(sel){ let o='<option value="">— não informado —</option>'; SEXOS.forEach(s=>{ o+=`<option value="${esc(s)}"${s===sel?" selected":""}>${esc(s)}</option>`; }); return o; }
 const DONOS=["Fazenda Realeza","José da Lamarta"];
 function optDono(sel){ sel=sel||"Fazenda Realeza"; let out=DONOS.map(d=>`<option value="${esc(d)}"${d===sel?" selected":""}>${esc(d)}</option>`).join(""); if(sel && !DONOS.includes(sel)) out=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`+out; return out; }
 function donoDe(a){ return (a&&a.dono)?a.dono:"Fazenda Realeza"; }
@@ -2452,6 +2466,7 @@ function renderRelatorioPastagem(){
       <td data-label="Cab/ha">${(k.cabHa!=null&&k.cab)?f2(k.cabHa):"—"}</td>
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
       <td data-label="Dono">${(k.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
+      <td data-label="Sexo">${(k.cab>0)?(esc(p.sexo)||"—"):"—"}</td>
     </tr>`;}).join("");
   const lotG=tA>0?tUA/tA:null;
   body.innerHTML=`<div class="card">
@@ -2459,9 +2474,9 @@ function renderRelatorioPastagem(){
     <div id="print-area">
       <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
       <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
-      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th></tr></thead>
+      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td></tr></tfoot>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td><td>—</td></tr></tfoot>
       </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
     </div>
     ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
@@ -3022,7 +3037,7 @@ async function salvarEdicao(id, tipo, silent){
 // CADASTRO POR VOZ (offline, por regras) — 🎤
 // Fala -> transcrição (Web Speech pt-BR) -> interpreta -> confirma -> salva
 // ============================================================
-let vozRec=null, vozTextoAtual="", vozCancelado=false;
+let vozRec=null, vozTextoAtual="", vozCancelado=false, vozPararSolic=false;
 function vozSuportado(){ return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window); }
 function ciclosDe(animalId){ return (LOCAL.reproducao||[]).filter(r=>r.animal_id===animalId).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); }
 function achaAnimalNum(n){ const num=parseInt(n,10); return (LOCAL.animais||[]).find(a=>!a.arquivado && a.numero===num)||null; }
@@ -3067,7 +3082,11 @@ function parseVoz(texto){
     else if(/mineral/.test(t)) nutri="Mineral";
     else if(/resist/.test(t)) nutri="Resist";
     let dono=null; if(/jose|lamarta/.test(t)) dono="José da Lamarta"; else if(/fazenda|realeza/.test(t)) dono="Fazenda Realeza";
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, texto:raw};
+    let sexo=null;
+    const temF=/\b(femea|femeas|vaca|vacas|novilha|novilhas|bezerra|bezerras)\b/.test(t);
+    const temM=/\b(macho|machos|boi|bois|touro|touros|garrote|garrotes|novilho|novilhos|bezerro|bezerros)\b/.test(t);
+    if(temF&&temM) sexo="Misto"; else if(temF) sexo="Fêmea"; else if(temM) sexo="Macho";
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3115,9 +3134,10 @@ function vozProcessar(txt){
       <div class="field"><label>Pasto</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
       <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
       <div class="field"><label>Peso médio (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
+      <div class="field"><label>Sexo dos animais</label><select id="vz_sexop">${optSexo(p.sexo||"")}</select></div>
       <div class="field"><label>Produto / nutrição</label><select id="vz_prod">${optNutricaoSimples(p.nutri||"")}</select></div>
       <div class="field"><label>Dono dos animais</label><select id="vz_pdono">${optDono(p.dono||"")}</select></div>
-    </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b> (informativo — a ocupação guarda cabeças, peso e produto).</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
+    </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b>.</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
   } else if(p.intent==="pesagem"){
     vozCard(`${diss}<div class="grid">
       <div class="field"><label>Animal nº</label><input id="vz_animal" type="number" inputmode="numeric" value="${p.animal||""}"></div>
@@ -3144,9 +3164,14 @@ function vozProcessar(txt){
 async function vozExecPasto(){
   const id=(document.getElementById("vz_pasto")||{}).value; if(!id) return toast("Escolha o pasto.","err");
   const cabV=(document.getElementById("vz_cab")||{}).value, pesoV=(document.getElementById("vz_peso")||{}).value;
-  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null };
+  // Só grava o campo informado por voz: campo vazio preserva o valor já salvo (não apaga outras células)
+  const upd={};
+  if(cabV!=="") upd.cabecas=parseInt(cabV);
+  if(pesoV!=="") upd.peso_medio=parseFloat(pesoV);
   const prodV=(document.getElementById("vz_prod")||{}).value; if(prodV) upd.produto=prodV;
   const pdonoV=(document.getElementById("vz_pdono")||{}).value; if(pdonoV) upd.dono=pdonoV;
+  const sexoV=(document.getElementById("vz_sexop")||{}).value; if(sexoV) upd.sexo=sexoV;
+  if(!Object.keys(upd).length) return toast("Nada para atualizar.","err");
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   const p=(LOCAL.pastos||[]).find(x=>x.id===id);
@@ -3202,17 +3227,29 @@ async function vozExecDiag(){
 function vozOverlay(show){ const ov=document.getElementById("voz-ov"); if(!ov) return; ov.classList.toggle("show",!!show); if(show){ vozTextoAtual=""; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent="…"; } }
 function vozSetTexto(t){ vozTextoAtual=t; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent=t||"…"; }
 function vozCancelar(){ vozCancelado=true; if(vozRec){ try{ vozRec.abort(); }catch(_){} } vozOverlay(false); }
-function vozParar(){ if(vozRec){ try{ vozRec.stop(); }catch(_){} } }
+function vozParar(){ vozPararSolic=true; if(vozRec){ try{ vozRec.stop(); }catch(_){} } }
 function vozIniciar(){
   if(!vozSuportado()){ toast("Seu navegador não reconhece voz. Abra no Chrome do Android.","err"); return; }
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  const rec=new SR(); vozRec=rec; vozCancelado=false;
-  rec.lang="pt-BR"; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
+  const rec=new SR(); vozRec=rec; vozCancelado=false; vozPararSolic=false;
+  // continuous=true: NÃO finaliza no primeiro silêncio — só processa quando o usuário toca em "✓ Usar"
+  rec.lang="pt-BR"; rec.interimResults=true; rec.continuous=true; rec.maxAlternatives=1;
   let finalTxt="";
   vozOverlay(true);
   rec.onresult=(e)=>{ let interim=""; for(let k=e.resultIndex;k<e.results.length;k++){ const r=e.results[k]; if(r.isFinal) finalTxt+=r[0].transcript+" "; else interim+=r[0].transcript; } vozSetTexto((finalTxt+interim).trim()); };
-  rec.onerror=(e)=>{ const m=(e&&e.error)||""; vozOverlay(false); if(vozCancelado) return; if(m==="not-allowed"||m==="service-not-allowed") toast("Permita o microfone para o app no navegador.","err"); else if(m==="no-speech") toast("Não ouvi nada. Toque no microfone e fale.","err"); else if(m!=="aborted") toast("Erro de voz: "+m,"err"); };
-  rec.onend=()=>{ vozOverlay(false); if(vozCancelado){ vozCancelado=false; return; } const txt=(finalTxt||vozTextoAtual||"").trim(); if(txt) vozProcessar(txt); };
+  rec.onerror=(e)=>{ const m=(e&&e.error)||""; if(vozCancelado){ vozOverlay(false); return; }
+    if(m==="no-speech"){ return; } // silêncio: deixa o onend reabrir a escuta, dá mais tempo
+    vozOverlay(false);
+    if(m==="not-allowed"||m==="service-not-allowed") toast("Permita o microfone para o app no navegador.","err");
+    else if(m!=="aborted") toast("Erro de voz: "+m,"err"); };
+  rec.onend=()=>{
+    if(vozCancelado){ vozCancelado=false; vozOverlay(false); return; }
+    if(!vozPararSolic){ // o navegador encerrou sozinho (pausa/silêncio): reabre para dar mais tempo
+      try{ rec.start(); return; }catch(_){}
+    }
+    vozOverlay(false); vozPararSolic=false;
+    const txt=(finalTxt||vozTextoAtual||"").trim(); if(txt) vozProcessar(txt);
+  };
   try{ rec.start(); }catch(_){ vozOverlay(false); }
 }
 (function(){
@@ -3222,7 +3259,7 @@ function vozIniciar(){
     document.head.appendChild(st);
     const fab=document.createElement("button"); fab.id="voz-fab"; fab.type="button"; fab.title="Cadastrar por voz"; fab.textContent="🎤"; fab.onclick=vozIniciar; document.body.appendChild(fab);
     const ov=document.createElement("div"); ov.id="voz-ov";
-    ov.innerHTML='<div class="mic">🎤</div><div style="font-size:15px;opacity:.9">Fale o comando…</div><div id="voz-txt">…</div><div class="vbtns"><button class="vok" type="button" onclick="vozParar()">✓ Usar</button><button class="vcancel" type="button" onclick="vozCancelar()">✕ Cancelar</button></div><p class="vhint">Ex.: “pasto 1 entrou 340 cabeças com 280 quilos de média” · “novilha 345 pariu” · “animal 320 pesou 415 quilos” · “vaca 210 prenha”</p>';
+    ov.innerHTML='<div class="mic">🎤</div><div style="font-size:15px;opacity:.9">Ouvindo… fale com calma</div><div id="voz-txt">…</div><div class="vbtns"><button class="vok" type="button" onclick="vozParar()">✓ Terminei</button><button class="vcancel" type="button" onclick="vozCancelar()">✕ Cancelar</button></div><p class="vhint">Pode falar pausado — só vai processar quando você tocar em <b>✓ Terminei</b>. Ex.: “pasto 1 entrou 340 cabeças com 280 quilos de média” · “novilha 345 pariu” · “animal 320 pesou 415 quilos” · “vaca 210 prenha”</p>';
     document.body.appendChild(ov);
   }catch(_){}
 })();
