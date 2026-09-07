@@ -756,7 +756,7 @@ function renderPastagem(){
         <div class="field"><label>Pasto</label><select id="pg_sel" onchange="preencherLotacao()"><option value="">— escolha —</option>${optPastos}</select></div>
         <div class="field"><label>Cabeças</label><input id="pg_cab" type="number" inputmode="numeric" min="0"></div>
         <div class="field"><label>Peso médio (kg)</label><input id="pg_peso" type="number" step="0.1" inputmode="decimal"></div>
-        <div class="field"><label>Produto em uso</label><input id="pg_prod" placeholder="sal/ração/suplemento"></div>
+        <div class="field"><label>Produto / nutrição em uso</label><select id="pg_prod_sel" onchange="togglePgProdOutro()">${optNutricao("")}</select><input id="pg_prod" placeholder="digite o produto" style="margin-top:6px;display:none"></div>
       </div>
       <div class="actions"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button></div>
       <div class="divider"></div>
@@ -776,11 +776,18 @@ function renderPastagem(){
       `:`<div class="empty">Nenhum pasto cadastrado ainda. Os pastos são cadastrados no <b>app de gestão</b> (Gerencial › Pastagem). Aqui no campo você atualiza a ocupação.</div>`}
     </div>`;
 }
+const NUTRICAO=["1G","2G","3G","Mineral","Resist"];
+function optNutricao(sel){ let o='<option value="">— nenhum —</option>'; NUTRICAO.forEach(n=>{ o+=`<option value="${n}"${n===sel?" selected":""}>${esc(n)}</option>`; }); if(sel && !NUTRICAO.includes(sel)) o+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`; o+='<option value="__outro__">Outro (digitar)…</option>'; return o; }
+function optNutricaoSimples(sel){ let o='<option value="">— nenhum —</option>'; NUTRICAO.forEach(n=>{ o+=`<option value="${n}"${n===sel?" selected":""}>${esc(n)}</option>`; }); if(sel && !NUTRICAO.includes(sel)) o+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`; return o; }
+function togglePgProdOutro(){ const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod"); if(!s||!inp) return; if(s.value==="__outro__"){ inp.style.display="block"; inp.value=""; try{inp.focus();}catch(e){} } else { inp.style.display="none"; inp.value=s.value; } }
 function preencherLotacao(){
   const id=(document.getElementById("pg_sel")||{}).value;
   const p=(LOCAL.pastos||[]).find(x=>x.id===id);
   const set=(el,v)=>{ const e=document.getElementById(el); if(e) e.value=(v==null?"":v); };
-  set("pg_cab", p?p.cabecas:""); set("pg_peso", p?p.peso_medio:""); set("pg_prod", p?p.produto:"");
+  set("pg_cab", p?p.cabecas:""); set("pg_peso", p?p.peso_medio:"");
+  const prod=p&&p.produto?String(p.produto):"";
+  const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod");
+  if(s&&inp){ if(prod && !NUTRICAO.includes(prod)){ s.value="__outro__"; inp.style.display="block"; inp.value=prod; } else { s.value=prod; inp.style.display="none"; inp.value=prod; } }
 }
 async function salvarLotacaoPasto(){
   const id=(document.getElementById("pg_sel")||{}).value;
@@ -2955,7 +2962,14 @@ function parseVoz(texto){
     const cm=t.match(/(\d{1,5})\s*(?:cabeca|cabecas|cab\b|animais)/);
     const wm=t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:kg|quilo|quilos|kilo|kilos)/) || t.match(/media\s*(?:de\s*)?(\d{1,4})/);
     const cat=(t.match(/novilh[ao]s?|vac[ao]s?|bois?|garrotes?|bezerr[ao]s?|touros?/)||[])[0]||null;
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, texto:raw};
+    let nutri=null; const gm=t.match(/\b([123])\s*g\b/);
+    if(gm) nutri=gm[1]+"G";
+    else if(/(primeira|1a)\s*ger/.test(t)) nutri="1G";
+    else if(/(segunda|2a)\s*ger/.test(t)) nutri="2G";
+    else if(/(terceira|3a)\s*ger/.test(t)) nutri="3G";
+    else if(/mineral/.test(t)) nutri="Mineral";
+    else if(/resist/.test(t)) nutri="Resist";
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3003,7 +3017,8 @@ function vozProcessar(txt){
       <div class="field"><label>Pasto</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
       <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
       <div class="field"><label>Peso médio (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
-    </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b> (informativo — a ocupação guarda cabeças e peso).</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
+      <div class="field"><label>Produto / nutrição</label><select id="vz_prod">${optNutricaoSimples(p.nutri||"")}</select></div>
+    </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b> (informativo — a ocupação guarda cabeças, peso e produto).</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
   } else if(p.intent==="pesagem"){
     vozCard(`${diss}<div class="grid">
       <div class="field"><label>Animal nº</label><input id="vz_animal" type="number" inputmode="numeric" value="${p.animal||""}"></div>
@@ -3031,6 +3046,7 @@ async function vozExecPasto(){
   const id=(document.getElementById("vz_pasto")||{}).value; if(!id) return toast("Escolha o pasto.","err");
   const cabV=(document.getElementById("vz_cab")||{}).value, pesoV=(document.getElementById("vz_peso")||{}).value;
   const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null };
+  const prodV=(document.getElementById("vz_prod")||{}).value; if(prodV) upd.produto=prodV;
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   const p=(LOCAL.pastos||[]).find(x=>x.id===id);
