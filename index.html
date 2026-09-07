@@ -2914,6 +2914,203 @@ async function salvarEdicao(id, tipo, silent){
   else { toast("Alterações salvas!","ok"); fecharModalRender(); }
 }
 
+// ============================================================
+// CADASTRO POR VOZ (offline, por regras) — 🎤
+// Fala -> transcrição (Web Speech pt-BR) -> interpreta -> confirma -> salva
+// ============================================================
+let vozRec=null, vozTextoAtual="", vozCancelado=false;
+function vozSuportado(){ return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window); }
+function ciclosDe(animalId){ return (LOCAL.reproducao||[]).filter(r=>r.animal_id===animalId).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); }
+function achaAnimalNum(n){ const num=parseInt(n,10); return (LOCAL.animais||[]).find(a=>!a.arquivado && a.numero===num)||null; }
+function matchPastoByNum(n){ if(n==null) return null; const alvo=parseInt(n,10);
+  return (LOCAL.pastos||[]).find(p=>{ const m=String(p.nome||"").match(/\d+/); return m && parseInt(m[0],10)===alvo; })
+      || (LOCAL.pastos||[]).find(p=>String(p.nome||"").trim()===String(n).trim()) || null; }
+const _uni={zero:0,um:1,uma:1,dois:2,duas:2,tres:3,quatro:4,cinco:5,seis:6,sete:7,oito:8,nove:9,dez:10,onze:11,doze:12,treze:13,quatorze:14,catorze:14,quinze:15,dezesseis:16,dezasseis:16,dezessete:17,dezassete:17,dezoito:18,dezenove:19,dezanove:19};
+const _dez={vinte:20,trinta:30,quarenta:40,cinquenta:50,sessenta:60,setenta:70,oitenta:80,noventa:90};
+const _cem={cem:100,cento:100,duzentos:200,duzentas:200,trezentos:300,trezentas:300,quatrocentos:400,quatrocentas:400,quinhentos:500,quinhentas:500,seiscentos:600,seiscentas:600,setecentos:700,setecentas:700,oitocentos:800,oitocentas:800,novecentos:900,novecentas:900};
+function _numWord(w){ if(w in _uni)return _uni[w]; if(w in _dez)return _dez[w]; if(w in _cem)return _cem[w]; if(w==="mil")return 1000; return null; }
+function normVoz(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
+function converterExtenso(str){
+  const toks=String(str||"").split(/\s+/); const out=[]; let i=0;
+  while(i<toks.length){
+    if(_numWord(toks[i])!=null){
+      let total=0,current=0,j=i,achou=false;
+      while(j<toks.length){
+        const tw=toks[j];
+        if(tw==="e" && achou){ j++; continue; }
+        const val=_numWord(tw); if(val==null) break;
+        if(val===1000){ total+=(current||1)*1000; current=0; } else { current+=val; }
+        achou=true; j++;
+      }
+      out.push(String(total+current)); i=j;
+    } else { out.push(toks[i]); i++; }
+  }
+  return out.join(" ");
+}
+function parseVoz(texto){
+  const raw=texto||""; const t=converterExtenso(normVoz(raw));
+  const idRe=/(?:animal|boi|vaca|vacas|novilha|novilhas|novilho|femea|bezerra|bezerro|garrote|touro|numero|n[oº°]|brinco)\s*(?:numero\s*)?(\d{1,6})/;
+  if(/\b(pasto|piquete)\b/.test(t) || /cabeca/.test(t)){
+    const pm=t.match(/(?:pasto|piquete)\s*(?:numero\s*|n[oº°]?\s*)?(\d{1,4})/);
+    const cm=t.match(/(\d{1,5})\s*(?:cabeca|cabecas|cab\b|animais)/);
+    const wm=t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:kg|quilo|quilos|kilo|kilos)/) || t.match(/media\s*(?:de\s*)?(\d{1,4})/);
+    const cat=(t.match(/novilh[ao]s?|vac[ao]s?|bois?|garrotes?|bezerr[ao]s?|touros?/)||[])[0]||null;
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, texto:raw};
+  }
+  if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
+    const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
+  }
+  if(/\b(pesou|peso|kg|quilo|quilos|kilo|kilos|arroba)\b/.test(t)){
+    const wm=t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:kg|quilo|quilos|kilo|kilos)/) || t.match(/pesou\s*(\d{1,4}(?:[.,]\d+)?)/);
+    let animal=null; const im=t.match(idRe); if(im) animal=im[1];
+    if(!animal){ const nums=[...t.matchAll(/\d+/g)].map(x=>x[0]); const pesoInt=wm?wm[1].replace(",",".").split(".")[0]:null; animal=nums.find(n=>n!==pesoInt)||nums[0]||null; }
+    return {intent:"pesagem", animal, peso: wm?wm[1].replace(",","."):null, texto:raw};
+  }
+  if(/\b(prenh|prenha|vazia|vazio|negativ|positiv|diagnostico|cheia|solteira|falhada)\b/.test(t)){
+    const m=t.match(idRe)||t.match(/(\d{1,6})/);
+    const prenhe=/prenh|positiv|cheia/.test(t) && !/vazi|negativ|solteira|falhada/.test(t);
+    return {intent:"diagnostico", animal:m?m[1]:null, prenhe, texto:raw};
+  }
+  return {intent:null, texto:raw};
+}
+function vozInfoAnimal(num, need){
+  const a=achaAnimalNum(num);
+  if(!a) return `<p class="alerta-mini" style="background:#fdeaea;border-color:#e0b4b4;color:#b23b3b">⚠️ Nenhum animal ativo com o número ${esc(num)}. Confira o número.</p>`;
+  let extra="";
+  if(need){ const cs=ciclosDe(a.id);
+    if(need==="prenhe"){ const r=cs.find(c=>c.fase==="prenhe"||c.resultado_prenhez===true); extra= r? ` · prenhe (${esc(coberturaTxt(r))})` : `<br><span style="color:#b23b3b">⚠️ Sem prenhez registrada — não dá pra registrar parto.</span>`; }
+    if(need==="aguardando"){ const r=cs.find(c=>c.fase==="aguardando"); extra= r? ` · aguardando diagnóstico` : `<br><span style="color:#b23b3b">⚠️ Sem cobertura aguardando diagnóstico.</span>`; }
+  }
+  return `<p class="alerta-mini ok">✓ nº ${a.numero} · ${esc(categoriaAnimal(a))||a.tipo}${extra}</p>`;
+}
+function vozCard(bodyHtml, execFn){
+  abrirModal(`<div class="modal-head"><b>🎤 Confirmar cadastro</b><button class="x" onclick="fecharModal()">✕</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    <div class="modal-foot"><button class="btn ghost" onclick="fecharModal()">Cancelar</button>${execFn?`<button class="btn gold" onclick="${execFn}()">✓ Confirmar e salvar</button>`:`<button class="btn" onclick="fecharModal();vozIniciar()">🎤 Falar de novo</button>`}</div>`);
+}
+function vozProcessar(txt){
+  const p=parseVoz(txt); window.__voz=p;
+  const diss=`<p class="muted" style="margin-top:0">Você disse: “<b>${esc(p.texto)}</b>”</p>`;
+  const hoje=new Date().toISOString().slice(0,10);
+  if(!p.intent){
+    vozCard(`${diss}<p>Não entendi o comando. Tente algo como:</p><ul class="inline-list"><li>“pasto 1 entrou 340 cabeças com 280 quilos de média”</li><li>“novilha 345 pariu”</li><li>“animal 320 pesou 415 quilos”</li><li>“vaca 210 prenha”</li></ul>`, null);
+    return;
+  }
+  if(p.intent==="pasto"){
+    const mid=(matchPastoByNum(p.pastoNum)||{}).id||"";
+    const opt=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||""))).map(x=>`<option value="${x.id}"${x.id===mid?" selected":""}>${esc(x.nome)||"(sem nome)"}</option>`).join("");
+    vozCard(`${diss}<div class="grid">
+      <div class="field"><label>Pasto</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
+      <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
+      <div class="field"><label>Peso médio (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
+    </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b> (informativo — a ocupação guarda cabeças e peso).</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
+  } else if(p.intent==="pesagem"){
+    vozCard(`${diss}<div class="grid">
+      <div class="field"><label>Animal nº</label><input id="vz_animal" type="number" inputmode="numeric" value="${p.animal||""}"></div>
+      <div class="field"><label>Peso (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
+      <div class="field"><label>Data</label><input id="vz_data" type="date" value="${hoje}"></div>
+    </div>${p.animal?vozInfoAnimal(p.animal,null):""}`, "vozExecPeso");
+  } else if(p.intent==="paricao"){
+    let sug=""; try{ const l=numerosLivres(1); if(l.length) sug=l[0].numero; }catch(_){}
+    vozCard(`${diss}<div class="grid">
+      <div class="field"><label>Fêmea nº (mãe)</label><input id="vz_mae" type="number" inputmode="numeric" value="${p.animal||""}"></div>
+      <div class="field"><label>Data da parição</label><input id="vz_data" type="date" value="${hoje}"></div>
+      <div class="field"><label>Sexo da cria</label><select id="vz_sexo"><option value="femea">Fêmea (bezerra)</option><option value="macho">Macho (bezerro)</option></select></div>
+      <div class="field"><label>Nº da cria</label><input id="vz_num" type="number" inputmode="numeric" value="${sug}"></div>
+      <div class="field"><label>Peso ao nascer (kg)</label><input id="vz_pnasc" type="number" step="0.1"></div>
+    </div>${p.animal?vozInfoAnimal(p.animal,"prenhe"):""}`, "vozExecParicao");
+  } else if(p.intent==="diagnostico"){
+    vozCard(`${diss}<div class="grid">
+      <div class="field"><label>Animal nº</label><input id="vz_animal" type="number" inputmode="numeric" value="${p.animal||""}"></div>
+      <div class="field"><label>Resultado</label><select id="vz_res"><option value="prenhe"${p.prenhe?" selected":""}>Prenha</option><option value="vazia"${p.prenhe?"":" selected"}>Vazia</option></select></div>
+      <div class="field"><label>Data</label><input id="vz_data" type="date" value="${hoje}"></div>
+    </div>${p.animal?vozInfoAnimal(p.animal,"aguardando"):""}`, "vozExecDiag");
+  }
+}
+async function vozExecPasto(){
+  const id=(document.getElementById("vz_pasto")||{}).value; if(!id) return toast("Escolha o pasto.","err");
+  const cabV=(document.getElementById("vz_cab")||{}).value, pesoV=(document.getElementById("vz_peso")||{}).value;
+  const upd={ cabecas: cabV!==""?parseInt(cabV):null, peso_medio: pesoV!==""?parseFloat(pesoV):null };
+  const { error } = await sb.from("pastos").update(upd).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  const p=(LOCAL.pastos||[]).find(x=>x.id===id);
+  toast(`Pasto ${p?(p.nome||""):""} atualizado: ${upd.cabecas??"—"} cab · ${upd.peso_medio??"—"} kg.`,"ok");
+  fecharModal(); render();
+}
+async function vozExecPeso(){
+  const num=parseInt((document.getElementById("vz_animal")||{}).value); const a=achaAnimalNum(num);
+  if(!a) return toast(`Animal nº ${num||"?"} não encontrado.`,"err");
+  const peso=parseFloat((document.getElementById("vz_peso")||{}).value); if(!peso||peso<=0) return toast("Informe o peso.","err");
+  const data=(document.getElementById("vz_data")||{}).value||new Date().toISOString().slice(0,10);
+  const { error } = await sb.from("operacoes_rebanho").insert({ animal_id:a.id, data, peso:Math.round(peso*10)/10, vermifugo:false, carbunculo:false, vacina_reprodutiva:false, outros_medicamentos:"Registro por voz" });
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast(`Peso ${peso} kg registrado no animal nº ${num}.`,"ok");
+  fecharModal(); render();
+}
+async function vozExecParicao(){
+  const maeNum=parseInt((document.getElementById("vz_mae")||{}).value); const a=achaAnimalNum(maeNum);
+  if(!a) return toast(`Fêmea nº ${maeNum||"?"} não encontrada.`,"err");
+  const rep=ciclosDe(a.id).find(c=>c.fase==="prenhe"||c.resultado_prenhez===true);
+  if(!rep) return toast(`A fêmea nº ${maeNum} não tem prenhez registrada para parir.`,"err");
+  const dataParto=(document.getElementById("vz_data")||{}).value; if(!dataParto) return toast("Informe a data da parição.","err");
+  const sexo=(document.getElementById("vz_sexo")||{}).value;
+  const numEl=document.getElementById("vz_num"); const num=(numEl&&numEl.value)?parseInt(numEl.value):null;
+  const pnEl=document.getElementById("vz_pnasc"); const pnasc=(pnEl&&pnEl.value)?parseFloat(pnEl.value):null;
+  let pai_id=null,pai_ref=null;
+  const { data:tou } = await sb.from("reproducao_touros").select("touro_id,touro_nome").eq("reproducao_id",rep.id).limit(1).maybeSingle();
+  if(tou){ pai_id=tou.touro_id||null; pai_ref=tou.touro_nome||null; }
+  const calf={ tipo:sexo, numero:num, origem:"nascimento", data_nascimento:dataParto, mae_id:a.id, mae_ref:null, pai_id, pai_ref, raca:a.raca||null, peso_nascimento:pnasc };
+  const { data:novo, error } = await sb.from("animais").insert(calf);
+  if(error) return erroInsert(error, num);
+  const calfId=novo[0].id;
+  const { error:e2 } = await sb.from("reproducao").update({ fase:"parida", data_parto_real:dataParto, bezerro_animal_id:calfId, bezerro_numero:num, bezerro_sexo:sexo }).eq("id",rep.id);
+  if(e2) return toast("Cria criada, mas erro ao atualizar reprodução: "+msgErro(e2),"err");
+  toast(`Parição registrada! Cria nº ${num??"?"} adicionada ao rebanho.`,"ok");
+  fecharModal(); render();
+}
+async function vozExecDiag(){
+  const num=parseInt((document.getElementById("vz_animal")||{}).value); const a=achaAnimalNum(num);
+  if(!a) return toast(`Animal nº ${num||"?"} não encontrado.`,"err");
+  const rep=ciclosDe(a.id).find(c=>c.fase==="aguardando");
+  if(!rep) return toast(`Nº ${num} não tem cobertura aguardando diagnóstico.`,"err");
+  const prenhe=(document.getElementById("vz_res")||{}).value==="prenhe";
+  const data=(document.getElementById("vz_data")||{}).value||null;
+  const recU={ resultado_prenhez:prenhe, fase: prenhe?"prenhe":"vazia" }; if(data) recU.data_diagnostico=data;
+  const { error } = await sb.from("reproducao").update(recU).eq("id",rep.id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  const lr=(LOCAL.reproducao||[]).find(x=>x.id===rep.id); if(lr) Object.assign(lr,recU);
+  toast(prenhe?`Prenhez confirmada na nº ${num}!`:`Nº ${num} registrada como vazia.`, prenhe?"ok":"");
+  if(!prenhe) checarAlertaVazia(a.id);
+  fecharModal(); render();
+}
+function vozOverlay(show){ const ov=document.getElementById("voz-ov"); if(!ov) return; ov.classList.toggle("show",!!show); if(show){ vozTextoAtual=""; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent="…"; } }
+function vozSetTexto(t){ vozTextoAtual=t; const tx=document.getElementById("voz-txt"); if(tx) tx.textContent=t||"…"; }
+function vozCancelar(){ vozCancelado=true; if(vozRec){ try{ vozRec.abort(); }catch(_){} } vozOverlay(false); }
+function vozParar(){ if(vozRec){ try{ vozRec.stop(); }catch(_){} } }
+function vozIniciar(){
+  if(!vozSuportado()){ toast("Seu navegador não reconhece voz. Abra no Chrome do Android.","err"); return; }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const rec=new SR(); vozRec=rec; vozCancelado=false;
+  rec.lang="pt-BR"; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
+  let finalTxt="";
+  vozOverlay(true);
+  rec.onresult=(e)=>{ let interim=""; for(let k=e.resultIndex;k<e.results.length;k++){ const r=e.results[k]; if(r.isFinal) finalTxt+=r[0].transcript+" "; else interim+=r[0].transcript; } vozSetTexto((finalTxt+interim).trim()); };
+  rec.onerror=(e)=>{ const m=(e&&e.error)||""; vozOverlay(false); if(vozCancelado) return; if(m==="not-allowed"||m==="service-not-allowed") toast("Permita o microfone para o app no navegador.","err"); else if(m==="no-speech") toast("Não ouvi nada. Toque no microfone e fale.","err"); else if(m!=="aborted") toast("Erro de voz: "+m,"err"); };
+  rec.onend=()=>{ vozOverlay(false); if(vozCancelado){ vozCancelado=false; return; } const txt=(finalTxt||vozTextoAtual||"").trim(); if(txt) vozProcessar(txt); };
+  try{ rec.start(); }catch(_){ vozOverlay(false); }
+}
+(function(){
+  try{
+    const st=document.createElement("style");
+    st.textContent="#voz-fab{position:fixed;right:16px;bottom:20px;z-index:80;width:60px;height:60px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--verde-esc),var(--verde2));color:#fff;font-size:26px;box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;justify-content:center}#voz-fab:active{transform:scale(.94)}#voz-ov{position:fixed;inset:0;background:rgba(21,31,25,.85);z-index:120;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:#fff}#voz-ov.show{display:flex}#voz-ov .mic{width:88px;height:88px;border-radius:50%;background:#e14b4b;display:flex;align-items:center;justify-content:center;font-size:42px;animation:vozpulse 1.2s infinite}@keyframes vozpulse{0%{box-shadow:0 0 0 0 rgba(225,75,75,.6)}70%{box-shadow:0 0 0 26px rgba(225,75,75,0)}100%{box-shadow:0 0 0 0 rgba(225,75,75,0)}}#voz-ov #voz-txt{font-size:22px;font-weight:700;min-height:30px;max-width:620px;line-height:1.3}#voz-ov .vbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px}#voz-ov .vbtns button{border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:800;cursor:pointer}#voz-ov .vok{background:var(--ouro);color:#3a2f10}#voz-ov .vcancel{background:rgba(255,255,255,.18);color:#fff}#voz-ov .vhint{max-width:540px;font-size:12.5px;opacity:.75;line-height:1.5}";
+    document.head.appendChild(st);
+    const fab=document.createElement("button"); fab.id="voz-fab"; fab.type="button"; fab.title="Cadastrar por voz"; fab.textContent="🎤"; fab.onclick=vozIniciar; document.body.appendChild(fab);
+    const ov=document.createElement("div"); ov.id="voz-ov";
+    ov.innerHTML='<div class="mic">🎤</div><div style="font-size:15px;opacity:.9">Fale o comando…</div><div id="voz-txt">…</div><div class="vbtns"><button class="vok" type="button" onclick="vozParar()">✓ Usar</button><button class="vcancel" type="button" onclick="vozCancelar()">✕ Cancelar</button></div><p class="vhint">Ex.: “pasto 1 entrou 340 cabeças com 280 quilos de média” · “novilha 345 pariu” · “animal 320 pesou 415 quilos” · “vaca 210 prenha”</p>';
+    document.body.appendChild(ov);
+  }catch(_){}
+})();
+
 // ================= INIT =================
 iniciarApp();
 </script>
