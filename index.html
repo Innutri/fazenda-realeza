@@ -743,6 +743,7 @@ function renderPastagem(){
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
       <td data-label="Dono">${(c.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
       <td data-label="Sexo">${(c.cab>0)?(esc(p.sexo)||"—"):"—"}</td>
+      <td data-label="Escore">${escoreBadge(p.escore)}</td>
     </tr>`;
   }).join("");
   const lotGeral = tArea>0? tUA/tArea : null;
@@ -759,12 +760,14 @@ function renderPastagem(){
         <div class="field"><label>Cabeças</label><input id="pg_cab" type="number" inputmode="numeric" min="0"></div>
         <div class="field"><label>Peso médio (kg)</label><input id="pg_peso" type="number" step="0.1" inputmode="decimal"></div>
         <div class="field"><label>Sexo dos animais</label><select id="pg_sexo">${optSexo("")}</select></div>
+        <div class="field"><label>Escore de pastagem (1 a 5)</label><select id="pg_escore">${optEscore("")}</select></div>
         <div class="field"><label>Produto / nutrição em uso</label><select id="pg_prod_sel" onchange="togglePgProdOutro()">${optNutricao("")}</select><input id="pg_prod" placeholder="digite o produto" style="margin-top:6px;display:none"></div>
         <div class="field"><label>Dono dos animais</label><select id="pg_dono">${optDono("")}</select></div>
       </div>
+      <div id="pg_escore_hist" class="muted" style="font-size:12.5px;margin:2px 0 6px"></div>
       <div class="actions" style="gap:8px;flex-wrap:wrap"><button class="btn" onclick="salvarLotacaoPasto()">Salvar ocupação</button><button class="btn sec" style="width:auto" onclick="esvaziarPasto()">Esvaziar pasto</button></div>
       <div class="divider"></div>
-      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th></tr></thead>
+      <div style="overflow-x:auto"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd. (kg)</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th><th>Escore</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr style="font-weight:800;background:#f0f5f1">
         <td data-label="Pasto">TOTAL / MÉDIA</td>
@@ -777,12 +780,13 @@ function renderPastagem(){
         <td data-label="Produto">—</td>
         <td data-label="Dono">—</td>
         <td data-label="Sexo">—</td>
+        <td data-label="Escore">—</td>
       </tr></tfoot></table></div>
       <p class="muted" style="margin-top:10px;font-size:12.5px">U.A. do pasto = (cabeças × peso médio) ÷ 450. Lotação = U.A. ÷ área (ha).</p>
       `:`<div class="empty">Nenhum pasto cadastrado ainda. Os pastos são cadastrados no <b>app de gestão</b> (Gerencial › Pastagem). Aqui no campo você atualiza a ocupação.</div>`}
     </div>`;
 }
-const NUTRICAO=["1G","2G","3G","Mineral","Resist"];
+const NUTRICAO=["1G","2G","3G","Mineral","Resist","Ração"];
 function optNutricao(sel){ let o='<option value="">— nenhum —</option>'; NUTRICAO.forEach(n=>{ o+=`<option value="${n}"${n===sel?" selected":""}>${esc(n)}</option>`; }); if(sel && !NUTRICAO.includes(sel)) o+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`; o+='<option value="__outro__">Outro (digitar)…</option>'; return o; }
 function optNutricaoSimples(sel){ let o='<option value="">— nenhum —</option>'; NUTRICAO.forEach(n=>{ o+=`<option value="${n}"${n===sel?" selected":""}>${esc(n)}</option>`; }); if(sel && !NUTRICAO.includes(sel)) o+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`; return o; }
 function togglePgProdOutro(){ const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod"); if(!s||!inp) return; if(s.value==="__outro__"){ inp.style.display="block"; inp.value=""; try{inp.focus();}catch(e){} } else { inp.style.display="none"; inp.value=s.value; } }
@@ -796,6 +800,10 @@ function preencherLotacao(){
   if(s&&inp){ if(prod && !NUTRICAO.includes(prod)){ s.value="__outro__"; inp.style.display="block"; inp.value=prod; } else { s.value=prod; inp.style.display="none"; inp.value=prod; } }
   const ds=document.getElementById("pg_dono"); if(ds) ds.value=(p&&p.dono)?p.dono:"Fazenda Realeza";
   const sx=document.getElementById("pg_sexo"); if(sx) sx.value=(p&&p.sexo)?p.sexo:"";
+  const ex=document.getElementById("pg_escore"); if(ex) ex.value=(p&&p.escore)?String(p.escore):"";
+  const eh=document.getElementById("pg_escore_hist");
+  if(eh){ const h=(p&&Array.isArray(p.escore_hist))?p.escore_hist.slice().reverse():[];
+    eh.innerHTML = h.length ? ("📈 <b>Histórico de escore:</b> "+h.slice(0,8).map(x=>`${fmtDate(x.data)}: ${escoreBadge(x.valor)}`).join(" &nbsp;·&nbsp; ")) : ""; }
 }
 async function salvarLotacaoPasto(){
   const id=(document.getElementById("pg_sel")||{}).value;
@@ -805,6 +813,7 @@ async function salvarLotacaoPasto(){
   const prod=((document.getElementById("pg_prod")||{}).value||"").trim();
   const dono=((document.getElementById("pg_dono")||{}).value||"").trim();
   const sexo=((document.getElementById("pg_sexo")||{}).value||"").trim();
+  const escoreV=((document.getElementById("pg_escore")||{}).value||"").trim();
   // Só grava o campo que foi preenchido: campo vazio preserva o valor já salvo (não apaga outras células)
   const upd={};
   if(cabV!=="") upd.cabecas=parseInt(cabV);
@@ -812,6 +821,7 @@ async function salvarLotacaoPasto(){
   if(prod!=="") upd.produto=prod;
   if(dono!=="") upd.dono=dono;
   if(sexo!=="") upd.sexo=sexo;
+  if(escoreV!==""){ const pAtual=(LOCAL.pastos||[]).find(x=>x.id===id); upd.escore=parseInt(escoreV); upd.escore_hist=_pushEscoreHist(pAtual, escoreV); }
   if(!Object.keys(upd).length) return toast("Nada para atualizar.","err");
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
@@ -1075,6 +1085,12 @@ function optProtocolosIatf(sel){ const lista=(LOCAL.protocolos||[]).filter(p=>p.
 function optRacas(sel){ return optsFrom((LOCAL.racas||[]).map(r=>r.nome).filter(Boolean), sel); }
 const SEXOS=["Fêmea","Macho","Misto"];
 function optSexo(sel){ let o='<option value="">— não informado —</option>'; SEXOS.forEach(s=>{ o+=`<option value="${esc(s)}"${s===sel?" selected":""}>${esc(s)}</option>`; }); return o; }
+// Escore de pastagem: 1 = pasto ruim ... 5 = bom, sobrando massa
+const ESCORE_LABEL={1:"1 - Ruim",2:"2 - Baixo",3:"3 - Regular",4:"4 - Bom",5:"5 - Excelente (sobrando massa)"};
+const ESCORE_COR={1:"#c0392b",2:"#e67e22",3:"#d4b106",4:"#67a24b",5:"#2e7d32"};
+function optEscore(sel){ let o='<option value="">— sem escore —</option>'; for(let i=1;i<=5;i++){ o+=`<option value="${i}"${String(sel)===String(i)?" selected":""}>${ESCORE_LABEL[i]}</option>`; } return o; }
+function escoreBadge(v){ if(!v) return "—"; const n=parseInt(v); return `<span style="display:inline-block;min-width:22px;padding:2px 7px;border-radius:20px;background:${ESCORE_COR[n]||"#888"};color:#fff;font-weight:800;font-size:12px">${n}</span>`; }
+function _pushEscoreHist(pasto, valor){ const hist=Array.isArray(pasto&&pasto.escore_hist)?pasto.escore_hist.slice():[]; const hoje=new Date().toISOString().slice(0,10); hist.push({data:hoje, valor:parseInt(valor)}); return hist.slice(-120); }
 const DONOS=["Fazenda Realeza","José da Lamarta"];
 function optDono(sel){ sel=sel||"Fazenda Realeza"; let out=DONOS.map(d=>`<option value="${esc(d)}"${d===sel?" selected":""}>${esc(d)}</option>`).join(""); if(sel && !DONOS.includes(sel)) out=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`+out; return out; }
 function donoDe(a){ return (a&&a.dono)?a.dono:"Fazenda Realeza"; }
@@ -2477,6 +2493,7 @@ function renderRelatorioPastagem(){
       <td data-label="Produto">${esc(p.produto)||"—"}</td>
       <td data-label="Dono">${(k.cab>0)?(esc(p.dono)||"Fazenda Realeza"):"—"}</td>
       <td data-label="Sexo">${(k.cab>0)?(esc(p.sexo)||"—"):"—"}</td>
+      <td data-label="Escore">${escoreBadge(p.escore)}</td>
     </tr>`;}).join("");
   const lotG=tA>0?tUA/tA:null;
   body.innerHTML=`<div class="card">
@@ -2484,9 +2501,9 @@ function renderRelatorioPastagem(){
     <div id="print-area">
       <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
       <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
-      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th></tr></thead>
+      ${ps.length?`<div style="overflow-x:auto;margin-top:10px"><table class="rt"><thead><tr><th>Pasto</th><th>Área (ha)</th><th>Cabeças</th><th>Peso méd.</th><th>U.A.</th><th>Lotação (U.A./ha)</th><th>Cab/ha</th><th>Produto</th><th>Dono</th><th>Sexo</th><th>Escore</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td><td>—</td></tr></tfoot>
+      <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tfoot>
       </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
     </div>
     ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
@@ -3092,6 +3109,7 @@ function parseVoz(texto){
     else if(/(terceira|3a)\s*ger/.test(t)) nutri="3G";
     else if(/mineral/.test(t)) nutri="Mineral";
     else if(/resist/.test(t)) nutri="Resist";
+    else if(/ra[cç][aã]o|racao/.test(t)) nutri="Ração";
     let dono=null; if(/jose|lamar/.test(t)) dono="José da Lamarta"; else if(/fazenda|realeza/.test(t)) dono="Fazenda Realeza";
     let sexo=null;
     const temF=/\b(femea|femeas|vaca|vacas|novilha|novilhas|bezerra|bezerras)\b/.test(t);
@@ -3099,7 +3117,10 @@ function parseVoz(texto){
     if(temF&&temM) sexo="Misto"; else if(temF) sexo="Fêmea"; else if(temM) sexo="Macho";
     // "pasto X vazio / desocupado / esvaziar / sem animais" -> limpar ocupação do pasto
     const vazio=/\bvazi[oa]\b|desocupad|esvazi|sem\s+anima|tirei\s+os|sairam|saiu\s+tudo|\blimpar\b|\blimpo\b/.test(t);
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, vazio, texto:raw};
+    // "escore 4", "escore de pastagem 3", "escore forrageiro 2", "nota 5 de pasto"
+    const escm=t.match(/escore\s*(?:d[ae]\s*)?(?:pastagem\s*|forrageiro\s*)?(?:nota\s*)?([1-5])\b/) || t.match(/\bnota\s*([1-5])\b/);
+    const escore=escm?escm[1]:null;
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, vazio, escore, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3153,6 +3174,7 @@ function vozProcessar(txt){
       <div class="field"><label>Cabeças</label><input id="vz_cab" type="number" inputmode="numeric" value="${p.cab||""}"></div>
       <div class="field"><label>Peso médio (kg)</label><input id="vz_peso" type="number" step="0.1" value="${p.peso||""}"></div>
       <div class="field"><label>Sexo dos animais</label><select id="vz_sexop">${optSexo(p.sexo||"")}</select></div>
+      <div class="field"><label>Escore de pastagem (1 a 5)</label><select id="vz_escore">${optEscore(p.escore||"")}</select></div>
       <div class="field"><label>Produto / nutrição</label><select id="vz_prod">${optNutricaoSimples(p.nutri||"")}</select></div>
       <div class="field"><label>Dono dos animais</label><select id="vz_pdono">${optDono(p.dono||"")}</select></div>
     </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b>.</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
@@ -3189,6 +3211,7 @@ async function vozExecPasto(){
   const prodV=(document.getElementById("vz_prod")||{}).value; if(prodV) upd.produto=prodV;
   const pdonoV=(document.getElementById("vz_pdono")||{}).value; if(pdonoV) upd.dono=pdonoV;
   const sexoV=(document.getElementById("vz_sexop")||{}).value; if(sexoV) upd.sexo=sexoV;
+  const escV=(document.getElementById("vz_escore")||{}).value; if(escV){ const pAtual=(LOCAL.pastos||[]).find(x=>x.id===id); upd.escore=parseInt(escV); upd.escore_hist=_pushEscoreHist(pAtual, escV); }
   if(!Object.keys(upd).length) return toast("Nada para atualizar.","err");
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
