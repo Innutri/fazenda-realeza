@@ -2469,15 +2469,55 @@ function renderRelatorios(){
   if(sub==="ultimos") renderUltimosRegistros(); else if(sub==="pastagem") renderRelatorioPastagem(); else gerarRelatorio();
 }
 function barraTexto(pct, n){ n=n||10; pct=Math.max(0,Math.min(100,pct||0)); const c=Math.round(pct/100*n); return "█".repeat(c)+"░".repeat(Math.max(0,n-c)); }
+function textoRelatorioRebanho(){
+  const ativos=(LOCAL.animais||[]).filter(contaNoRebanho);
+  const total=ativos.length;
+  const cont={femea:0,macho:0,touro:0}; ativos.forEach(a=>{ if(cont[a.tipo]!=null) cont[a.tipo]++; });
+  const cat={bezerra:0,novilha:0,vaca:0,bezerro:0,garrote:0,boi:0};
+  ativos.forEach(a=>{ const c=categoriaAnimal(a); if(cat[c]!=null) cat[c]++; });
+  const femeas=ativos.filter(a=>a.tipo==="femea");
+  const ultimoRepro=(fid)=>{ const cs=(LOCAL.reproducao||[]).filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+  let prenhas=0,vazias=0,expostas=0;
+  femeas.forEach(f=>{ const u=ultimoRepro(f.id); if(!u) return;
+    const pr=(u.fase==="prenhe"||u.resultado_prenhez===true), vz=(u.fase==="vazia"||u.resultado_prenhez===false);
+    if(pr){prenhas++;expostas++;} else if(vz){vazias++;expostas++;} else if(u.fase==="aguardando"){expostas++;} });
+  const taxaPr=expostas?Math.round(prenhas/expostas*100):0;
+  const donos={}; ativos.forEach(a=>{ const d=donoDe(a); donos[d]=(donos[d]||0)+1; });
+  const mesAtual=new Date().toISOString().slice(0,7);
+  const mortesMes=(LOCAL.animais||[]).filter(a=>a.status==="morto" && String(a.data_morte||"").slice(0,7)===mesAtual).length;
+
+  let t=`🐄 *FAZENDA REALEZA — REBANHO*\n`;
+  t+=`📅 ${fmtDate(new Date().toISOString().slice(0,10))}\n\n`;
+  t+=`*📊 RESUMO*\n`;
+  t+=`• Total ativos: *${total}*\n`;
+  t+=`• Fêmeas: *${cont.femea}*  ·  Machos: *${cont.macho}*  ·  Touros: *${cont.touro}*\n`;
+  t+=`\n*🐮 CATEGORIAS*\n`;
+  t+=`Fêmeas: bezerras *${cat.bezerra}* · novilhas *${cat.novilha}* · vacas *${cat.vaca}*\n`;
+  t+=`Machos: bezerros *${cat.bezerro}* · garrotes *${cat.garrote}* · bois *${cat.boi}*\n`;
+  if(femeas.length && expostas){
+    t+=`\n*🍼 REPRODUÇÃO*\n`;
+    t+=`• Prenhas: *${prenhas}*  ·  Vazias: *${vazias}*\n`;
+    t+=`• Taxa de prenhez: *${taxaPr}%*\n${barraTexto(taxaPr)}\n`;
+  }
+  t+=`\n*👥 POR DONO*\n`;
+  Object.keys(donos).sort().forEach(d=>{ const pct=total?Math.round(donos[d]/total*100):0; t+=`${d} — *${donos[d]}* (${pct}%)\n`; });
+  if(mortesMes) t+=`\n💀 Mortes no mês: *${mortesMes}*\n`;
+  t+=`\n— Fazenda Realeza 👑`;
+  return t;
+}
+async function compartilharRebanho(){
+  const txt=textoRelatorioRebanho();
+  try{ if(navigator.share){ await navigator.share({ text:txt }); return; } }catch(_){}
+  try{ await navigator.clipboard.writeText(txt); toast("Texto copiado — abrindo WhatsApp.","ok"); }catch(_){}
+  try{ window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); }catch(_){}
+}
 function textoRelatorioPastagem(){
   const nf1=v=>(Math.round((v||0)*10)/10).toString().replace(".",",");
   const nf2=v=>(Math.round((v||0)*100)/100).toString().replace(".",",");
   const ps=(LOCAL.pastos||[]);
-  const manejo=ps.filter(p=>String(p.nome||"")!=="Campo Nativo");
-  const nativo=ps.filter(p=>String(p.nome||"")==="Campo Nativo");
-  const areaManejo=manejo.reduce((s,p)=>s+(parseFloat(p.area_ha)||0),0);
-  const areaNativo=nativo.reduce((s,p)=>s+(parseFloat(p.area_ha)||0),0);
-  const ocupados=manejo.filter(p=>(parseInt(p.cabecas)||0)>0);
+  const areaTotal=ps.reduce((s,p)=>s+(parseFloat(p.area_ha)||0),0);
+  // TODOS os pastos com animais (inclusive Campo Nativo) — pra não sumir informação
+  const ocupados=ps.filter(p=>(parseInt(p.cabecas)||0)>0);
   let tC=0,tUA=0,tAoc=0; ocupados.forEach(p=>{ const k=calcPastagem(p); tC+=k.cab; tUA+=k.ua; tAoc+=k.area; });
   const lotG=tAoc>0?tUA/tAoc:null;
 
@@ -2486,9 +2526,10 @@ function textoRelatorioPastagem(){
   t+=`_1 U.A. = 450 kg de peso vivo_\n\n`;
 
   t+=`*📊 RESUMO*\n`;
-  t+=`• Pastos de manejo: *${manejo.length}*  ·  *${nf1(areaManejo)} ha*\n`;
-  if(nativo.length) t+=`• Campo nativo: ${nf1(areaNativo)} ha\n`;
-  t+=`• Animais nos pastos: *${tC}* cab\n`;
+  t+=`• Pastos cadastrados: *${ps.length}*  ·  *${nf1(areaTotal)} ha*\n`;
+  t+=`• Pastos com animais: *${ocupados.length}*\n`;
+  t+=`• Total de animais: *${tC}* cab\n`;
+  t+=`• Área ocupada: *${nf1(tAoc)} ha*\n`;
   t+=`• Lotação geral: *${lotG!=null?nf2(lotG):"—"}* U.A./ha\n`;
 
   if(ocupados.length){
@@ -2500,14 +2541,25 @@ function textoRelatorioPastagem(){
       t+=`${d} — *${sC}* cab (${pct}%)\n${barraTexto(pct)}\n`;
     });
     t+=`\n*🐂 PASTOS COM ANIMAIS*\n`;
+    t+=`_(cab · área · peso · U.A. · lotação · cab/ha)_\n\n`;
     ocupados.slice().sort((a,b)=>(parseInt(b.cabecas)||0)-(parseInt(a.cabecas)||0)).forEach(p=>{
       const k=calcPastagem(p);
-      t+=`• *${p.nome||"—"}*: *${k.cab}* cab`;
+      t+=`• *${p.nome||"—"}*${p.escore?`  ⭐${p.escore}`:""}\n`;
+      t+=`   *${k.cab}* cab`;
+      if(p.area_ha!=null&&p.area_ha!=="") t+=` · ${nf1(k.area)} ha`;
       if(k.pm) t+=` · ${nf1(k.pm)} kg`;
-      if(k.lotUA!=null&&k.pesoTotal) t+=` · lot ${nf2(k.lotUA)}`;
-      let extra=[]; if(p.dono) extra.push(p.dono); if(p.produto) extra.push(p.produto);
-      if(extra.length) t+=`\n   ↳ ${extra.join(" · ")}`;
+      if(k.pesoTotal) t+=` · ${nf1(k.ua)} U.A.`;
       t+=`\n`;
+      let l2=[];
+      if(k.lotUA!=null&&k.pesoTotal) l2.push(`lot ${nf2(k.lotUA)} U.A./ha`);
+      if(k.cabHa!=null&&k.cab) l2.push(`${nf2(k.cabHa)} cab/ha`);
+      if(l2.length) t+=`   ${l2.join(" · ")}\n`;
+      let l3=[];
+      if(p.produto) l3.push(p.produto);
+      if(p.sexo) l3.push(p.sexo);
+      if(p.escore) l3.push(`escore ${p.escore}`);
+      l3.push(p.dono||"Fazenda Realeza");
+      t+=`   _${l3.join(" · ")}_\n`;
     });
   } else {
     t+=`\n_Nenhum pasto com animais informados ainda. Atualize a ocupação (cabeças e dono) na aba 🌱 Pasto ou pelo microfone 🎤._\n`;
@@ -2748,6 +2800,10 @@ async function gerarRelatorio(){
         <div class="kpi gold"><div class="n">${cont.touro}</div><div class="l">Touros (fazenda)</div></div>
       </div>
       ${centrais?`<p class="muted" style="margin-top:12px">🧬 ${centrais} touro(s) de central (sêmen) cadastrado(s) — usados na reprodução (IATF), mas <b>não contam</b> no rebanho físico.</p>`:""}
+      <div class="actions no-print" style="flex-wrap:wrap;gap:8px;margin-top:12px">
+        <button class="btn" style="width:auto" onclick="compartilharRebanho()">📲 Compartilhar (WhatsApp)</button>
+        <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      </div>
     </div>
 
     <div class="card" id="rel-dono">
