@@ -793,17 +793,32 @@ function togglePgProdOutro(){ const s=document.getElementById("pg_prod_sel"), in
 function preencherLotacao(){
   const id=(document.getElementById("pg_sel")||{}).value;
   const p=(LOCAL.pastos||[]).find(x=>x.id===id);
-  const set=(el,v)=>{ const e=document.getElementById(el); if(e) e.value=(v==null?"":v); };
-  set("pg_cab", p?p.cabecas:""); set("pg_peso", p?p.peso_medio:"");
-  const prod=p&&p.produto?String(p.produto):"";
+  // Pasto sempre muda: os campos abrem SEMPRE EM BRANCO para uma leitura nova.
+  // O que estiver salvo aparece só como referência abaixo (Situação atual).
+  const set=(el,v)=>{ const e=document.getElementById(el); if(e) e.value=v; };
+  set("pg_cab",""); set("pg_peso","");
   const s=document.getElementById("pg_prod_sel"), inp=document.getElementById("pg_prod");
-  if(s&&inp){ if(prod && !NUTRICAO.includes(prod)){ s.value="__outro__"; inp.style.display="block"; inp.value=prod; } else { s.value=prod; inp.style.display="none"; inp.value=prod; } }
+  if(s&&inp){ s.value=""; inp.style.display="none"; inp.value=""; }
   const ds=document.getElementById("pg_dono"); if(ds) ds.value=(p&&p.dono)?p.dono:"Fazenda Realeza";
-  const sx=document.getElementById("pg_sexo"); if(sx) sx.value=(p&&p.sexo)?p.sexo:"";
-  const ex=document.getElementById("pg_escore"); if(ex) ex.value=(p&&p.escore)?String(p.escore):"";
+  const sx=document.getElementById("pg_sexo"); if(sx) sx.value="";
+  const ex=document.getElementById("pg_escore"); if(ex) ex.value="";
   const eh=document.getElementById("pg_escore_hist");
-  if(eh){ const h=(p&&Array.isArray(p.escore_hist))?p.escore_hist.slice().reverse():[];
-    eh.innerHTML = h.length ? ("📈 <b>Histórico de escore:</b> "+h.slice(0,8).map(x=>`${fmtDate(x.data)}: ${escoreBadge(x.valor)}`).join(" &nbsp;·&nbsp; ")) : ""; }
+  if(eh){
+    let ref="";
+    if(p){
+      const partes=[];
+      if(p.cabecas!=null&&p.cabecas!=="") partes.push(`${p.cabecas} cab`);
+      if(p.peso_medio!=null&&p.peso_medio!=="") partes.push(`${(Math.round(p.peso_medio*10)/10).toString().replace(".",",")} kg`);
+      if(p.escore) partes.push(`escore ${p.escore}`);
+      if(p.sexo) partes.push(esc(p.sexo));
+      if(p.produto) partes.push(esc(p.produto));
+      if(p.dono) partes.push(esc(p.dono));
+      ref = partes.length ? `📋 <b>Situação atual (referência):</b> ${partes.join(" · ")}` : `📋 <span class="muted">Pasto sem ocupação registrada.</span>`;
+    }
+    const h=(p&&Array.isArray(p.escore_hist))?p.escore_hist.slice().reverse():[];
+    const hist = h.length ? ("<br>📈 <b>Histórico de escore:</b> "+h.slice(0,8).map(x=>`${fmtDate(x.data)}: ${escoreBadge(x.valor)}`).join(" &nbsp;·&nbsp; ")) : "";
+    eh.innerHTML = ref + hist;
+  }
 }
 async function salvarLotacaoPasto(){
   const id=(document.getElementById("pg_sel")||{}).value;
@@ -861,12 +876,34 @@ function renderRebanho(){
     {id:"cadastro",label:"Cadastro"},
     {id:"registros",label:"Registros"},
     {id:"numeros",label:"Números disponíveis"},
+    {id:"mortes",label:"Mortes"},
   ],"rebanho","cadastro");
   app.innerHTML = html + `<div id="rebanho-body"></div>`;
   bindSub();
   if(sub==="cadastro") renderCadastro();
   else if(sub==="registros") renderRegistros();
+  else if(sub==="mortes") renderMortes();
   else renderNumeros();
+}
+function renderMortes(){
+  const body=$("#rebanho-body");
+  const mortos=(LOCAL.animais||[]).filter(a=>a.status==="morto").sort((a,b)=>String(b.data_morte||"").localeCompare(String(a.data_morte||"")));
+  // resumo por mês
+  const porMes={}; mortos.forEach(a=>{ const m=(a.data_morte||"").slice(0,7)||"sem data"; porMes[m]=(porMes[m]||0)+1; });
+  const rows=mortos.map(a=>`<tr>
+    <td data-label="Nº">${a.numero_original??a.codigo_arquivo??"—"}</td>
+    <td data-label="Categoria">${esc(categoriaAnimal(a))||esc(a.tipo)||"—"}</td>
+    <td data-label="Raça">${esc(a.raca)||"—"}</td>
+    <td data-label="Data da morte">${fmtDate(a.data_morte)}</td>
+    <td data-label="Causa">${esc(a.causa_morte)||"—"}</td>
+  </tr>`).join("");
+  const resumo=Object.keys(porMes).sort().reverse().slice(0,6).map(m=>`<span class="tag" style="background:#f3e0e0;color:#a23b3b">${m}: <b>${porMes[m]}</b></span>`).join(" ");
+  body.innerHTML=`<div class="card">
+    <h3>💀 Mortes registradas (${mortos.length})</h3>
+    <p class="muted">Animais registrados como morte saem do rebanho ativo e o número volta a ficar disponível. Para registrar uma morte, use o botão <b>Morte</b> na lista de animais (aba Cadastro) ou fale por voz: “animal 320 morreu”.</p>
+    ${resumo?`<div style="margin:6px 0 10px;display:flex;gap:8px;flex-wrap:wrap">${resumo}</div>`:""}
+    ${mortos.length?`<div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Raça</th><th>Data da morte</th><th>Causa</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<div class="empty">Nenhuma morte registrada.</div>`}
+  </div>`;
 }
 
 // --------- CADASTRO (Rebanho: animais) ---------
@@ -1098,6 +1135,8 @@ function escoreBadge(v){ if(!v) return "—"; const n=parseInt(v); return `<span
 function _pushEscoreHist(pasto, valor){ const hist=Array.isArray(pasto&&pasto.escore_hist)?pasto.escore_hist.slice():[]; const hoje=new Date().toISOString().slice(0,10); hist.push({data:hoje, valor:parseInt(valor)}); return hist.slice(-120); }
 const DONOS=["Fazenda Realeza","José da Lamarta"];
 function optDono(sel){ sel=sel||"Fazenda Realeza"; let out=DONOS.map(d=>`<option value="${esc(d)}"${d===sel?" selected":""}>${esc(d)}</option>`).join(""); if(sel && !DONOS.includes(sel)) out=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`+out; return out; }
+// Versão p/ voz: se o dono NÃO foi falado, fica em branco e não sobrescreve o que já estava salvo
+function optDonoVoz(sel){ let o=`<option value=""${!sel?" selected":""}>— não informado (mantém) —</option>`; DONOS.forEach(d=>{ o+=`<option value="${esc(d)}"${d===sel?" selected":""}>${esc(d)}</option>`; }); if(sel && !DONOS.includes(sel)) o+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`; return o; }
 function donoDe(a){ return (a&&a.dono)?a.dono:"Fazenda Realeza"; }
 function optClass(sel){ return optsFrom((LOCAL.classificacoes||[]).map(r=>r.nome).filter(Boolean), sel); }
 function optVermifugos(sel){
@@ -1308,6 +1347,7 @@ async function listaAnimais(tipo){
         <button class="btn ghost sm" onclick="abrirFicha('${a.id}')">Ficha</button>
         <button class="btn gold sm" onclick="editarAnimal('${a.id}')">Editar</button>
         <button class="btn danger sm" onclick="arquivar('${a.id}',${a.numero})">Vender</button>
+        <button class="btn danger sm" style="background:#7a2b2b" onclick="registrarMorte('${a.id}',${a.numero})">Morte</button>
       </div></td>
     </tr>`).join("");
   el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados (${data.length})</h3>
@@ -1325,6 +1365,31 @@ async function arquivar(id,numero){
   if(error) return toast("Erro: "+error.message,"err");
   toast(`Animal arquivado como A${numero}. Número ${numero} liberado.`,"ok");
   render();
+}
+function registrarMorte(id,numero){
+  const a=(LOCAL.animais||[]).find(x=>x.id===id); if(!a) return toast("Animal não encontrado.","err");
+  const hoje=new Date().toISOString().slice(0,10);
+  abrirModal(`<div class="modal-head"><b>💀 Registrar morte</b><button class="x" onclick="fecharModal()">✕</button></div>
+    <div class="modal-body">
+      <p>Animal nº <b>${numero??(a.numero||"")}</b> — ${esc(categoriaAnimal(a))||esc(a.tipo)}</p>
+      <div class="grid">
+        <div class="field"><label>Data da morte</label><input id="mt_data" type="date" value="${hoje}"></div>
+        <div class="field"><label>Causa (opcional)</label><input id="mt_causa" placeholder="ex.: doença, predador, acidente, parto"></div>
+      </div>
+      <p class="muted">O animal sai do rebanho ativo e o número ${numero??""} fica livre. Fica guardado na aba <b>Mortes</b>.</p>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" onclick="fecharModal()">Cancelar</button><button class="btn danger" onclick="confirmarMorte('${id}')">Confirmar morte</button></div>`);
+}
+async function confirmarMorte(id){
+  const a=(LOCAL.animais||[]).find(x=>x.id===id); if(!a) return toast("Animal não encontrado.","err");
+  const data=(document.getElementById("mt_data")||{}).value||new Date().toISOString().slice(0,10);
+  const causa=((document.getElementById("mt_causa")||{}).value||"").trim();
+  const numero=a.numero;
+  const upd={ arquivado:true, status:"morto", data_morte:data, causa_morte:causa||null, numero_original:(a.numero_original??a.numero), codigo_arquivo:"M"+(a.numero??a.id), numero:null };
+  const { error } = await sb.from("animais").update(upd).eq("id",id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast(`Morte registrada (nº ${numero??"—"}). Número liberado.`,"ok");
+  fecharModal(); render();
 }
 
 // --------- REGISTROS ---------
@@ -2672,6 +2737,7 @@ async function gerarRelatorio(){
       <a href="#rel-partos">Partos</a>
       <a href="#rel-descarte">Descarte</a>
       <a href="#rel-dono">Por dono</a>
+      <a href="#rel-obs">Observações</a>
     </div>
     <div class="card" id="rel-rebanho">
       <h3>Rebanho — visão geral</h3>
@@ -2699,6 +2765,17 @@ async function gerarRelatorio(){
           <tfoot><tr style="font-weight:800;background:#f0f5f1"><td data-label="Dono">TOTAL (junto)</td><td data-label="Fêmeas">${tf}</td><td data-label="Machos">${tm}</td><td data-label="Touros">${tt}</td><td data-label="Total"><b>${at.length}</b></td></tr></tfoot></table></div>`;
       })()}
       <p class="muted" style="margin-top:10px;font-size:12.5px">Marque o dono de cada animal no cadastro ou na edição (campo "Dono"). Sem marcação, o animal conta como <b>Fazenda Realeza</b>.</p>
+    </div>
+
+    <div class="card" id="rel-obs">
+      <h3>📝 Observações dos animais</h3>
+      ${(function(){
+        const comObs=LOCAL.animais.filter(a=>!a.arquivado && a.observacoes && String(a.observacoes).trim());
+        comObs.sort((a,b)=>(a.numero||0)-(b.numero||0));
+        if(!comObs.length) return `<p class="muted">Nenhum animal com observação registrada. Escreva no campo "Observações" ao cadastrar ou editar um animal (ex.: “comprada da fazenda X”, “manca”, “brinco trocado”).</p>`;
+        const rows=comObs.map(a=>`<tr><td data-label="Nº">${a.numero??a.codigo_arquivo??"—"}</td><td data-label="Categoria"><span class="tag ${a.tipo}">${esc(categoriaAnimal(a))||esc(a.tipo)}</span></td><td data-label="Raça">${esc(a.raca)||"—"}</td><td data-label="Dono">${esc(donoDe(a))}</td><td data-label="Observação">${esc(a.observacoes)}</td></tr>`).join("");
+        return `<p class="muted">${comObs.length} animal(is) com observação registrada.</p><div style="overflow-x:auto"><table class="rt"><thead><tr><th>Nº</th><th>Categoria</th><th>Raça</th><th>Dono</th><th>Observação</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      })()}
     </div>
 
     <div class="card" id="rel-categorias">
@@ -3074,9 +3151,14 @@ let vozCommitted="", vozCurrent="", vozEditando=false;
 function vozSuportado(){ return ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window); }
 function ciclosDe(animalId){ return (LOCAL.reproducao||[]).filter(r=>r.animal_id===animalId).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); }
 function achaAnimalNum(n){ const num=parseInt(n,10); return (LOCAL.animais||[]).find(a=>!a.arquivado && a.numero===num)||null; }
-function matchPastoByNum(n){ if(n==null) return null; const alvo=parseInt(n,10);
-  return (LOCAL.pastos||[]).find(p=>{ const m=String(p.nome||"").match(/\d+/); return m && parseInt(m[0],10)===alvo; })
-      || (LOCAL.pastos||[]).find(p=>String(p.nome||"").trim()===String(n).trim()) || null; }
+function matchPastoByNum(n, letra){ if(n==null) return null; const alvo=parseInt(n,10);
+  const cands=(LOCAL.pastos||[]).filter(p=>{ const m=String(p.nome||"").match(/\d+/); return m && parseInt(m[0],10)===alvo; });
+  if(letra){ const L=String(letra).toUpperCase();
+    const exato=cands.find(p=>String(p.nome||"").toUpperCase().replace(/[^0-9A-Z]/g,"").endsWith(alvo+L));
+    if(exato) return exato;
+  }
+  if(cands.length) return cands[0];
+  return (LOCAL.pastos||[]).find(p=>String(p.nome||"").trim()===String(n).trim()) || null; }
 const _uni={zero:0,um:1,uma:1,dois:2,duas:2,tres:3,quatro:4,cinco:5,seis:6,sete:7,oito:8,nove:9,dez:10,onze:11,doze:12,treze:13,quatorze:14,catorze:14,quinze:15,dezesseis:16,dezasseis:16,dezessete:17,dezassete:17,dezoito:18,dezenove:19,dezanove:19};
 const _dez={vinte:20,trinta:30,quarenta:40,cinquenta:50,sessenta:60,setenta:70,oitenta:80,noventa:90};
 const _cem={cem:100,cento:100,duzentos:200,duzentas:200,trezentos:300,trezentas:300,quatrocentos:400,quatrocentas:400,quinhentos:500,quinhentas:500,seiscentos:600,seiscentas:600,setecentos:700,setecentas:700,oitocentos:800,oitocentas:800,novecentos:900,novecentas:900};
@@ -3103,9 +3185,10 @@ function parseVoz(texto){
   const raw=texto||""; const t=converterExtenso(normVoz(raw));
   const idRe=/(?:animal|boi|vaca|vacas|novilha|novilhas|novilho|femea|bezerra|bezerro|garrote|touro|numero|n[oº°]|brinco)\s*(?:numero\s*)?(\d{1,6})/;
   if(/\b(pasto|piquete)\b/.test(t) || /cabeca/.test(t)){
-    const pm=t.match(/(?:pasto|piquete)\s*(?:numero\s*|n[oº°]?\s*)?(\d{1,4})/);
-    const cm=t.match(/(\d{1,5})\s*(?:cabeca|cabecas|cab\b|animais)/);
-    const wm=t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:kg|quilo|quilos|kilo|kilos)/) || t.match(/media\s*(?:de\s*)?(\d{1,4})/);
+    const pm=t.match(/(?:pasto|piquete)\s*(?:numero\s*|n[oº°]?\s*)?(\d{1,4})(?:\s+([a-z])\b)?/);
+    const pastoLetra=(pm&&pm[2])?pm[2].toUpperCase():null;
+    const cm=t.match(/(\d{1,5})\s*(?:cabeca|cabecas|cab\b|animais|reses|rezes)/);
+    const wm=t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:kg|quilo|quilos|kilo|kilos|k\b)/) || t.match(/(?:media|peso\s*medio|pesando|pesa|peso)\s*(?:de\s*)?(\d{1,4}(?:[.,]\d+)?)/) || t.match(/(\d{1,4}(?:[.,]\d+)?)\s*(?:de\s*)?media/);
     const cat=(t.match(/novilh[ao]s?|vac[ao]s?|bois?|garrotes?|bezerr[ao]s?|touros?/)||[])[0]||null;
     let nutri=null; const gm=t.match(/\b([123])\s*g\b/);
     if(gm) nutri=gm[1]+"G";
@@ -3125,7 +3208,21 @@ function parseVoz(texto){
     // "escore 4", "escore de pastagem 3", "escore forrageiro 2", "nota 5 de pasto"
     const escm=t.match(/escore\s*(?:d[ae]\s*)?(?:pastagem\s*|forrageiro\s*)?(?:nota\s*)?([1-5])\b/) || t.match(/\bnota\s*([1-5])\b/);
     const escore=escm?escm[1]:null;
-    return {intent:"pasto", pastoNum: pm?pm[1]:null, cab: cm?cm[1]:null, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, vazio, escore, texto:raw};
+    // fallback de cabeças: se não falou "cabeças", pega um número que sobrou (não é o pasto, nem peso, nem escore)
+    let cab = cm?cm[1]:null;
+    if(cab==null){
+      const pastoN=pm?pm[1]:null, pesoN=wm?wm[1]:null, escN=escm?escm[1]:null, nutN=(gm?gm[1]:null);
+      const nums=[...t.matchAll(/\d+(?:[.,]\d+)?/g)].map(x=>x[0]);
+      const usados=[pastoN,pesoN,escN,nutN].filter(Boolean);
+      const rest=nums.filter(n=>!/[.,]/.test(n) && !usados.includes(n));
+      // remove uma ocorrência de cada usado (caso o mesmo número apareça 2x)
+      if(rest.length) cab=rest[0];
+    }
+    return {intent:"pasto", pastoNum: pm?pm[1]:null, pastoLetra, cab, peso: wm?wm[1].replace(",","."):null, cat, nutri, dono, sexo, vazio, escore, texto:raw};
+  }
+  if(/\b(morreu|morte|morto|morta|obito|óbito|faleceu|morreram)\b/.test(t)){
+    const m=t.match(idRe)||t.match(/(\d{1,6})/);
+    return {intent:"morte", animal:m?m[1]:null, texto:raw};
   }
   if(/\b(pariu|paric|nasceu|parto|parida)\b/.test(t)){
     const m=t.match(idRe)||t.match(/(\d{1,6})/); return {intent:"paricao", animal:m?m[1]:null, texto:raw};
@@ -3167,7 +3264,7 @@ function vozProcessar(txt){
     return;
   }
   if(p.intent==="pasto"){
-    const mid=(matchPastoByNum(p.pastoNum)||{}).id||"";
+    const mid=(matchPastoByNum(p.pastoNum, p.pastoLetra)||{}).id||"";
     const opt=(LOCAL.pastos||[]).slice().sort((a,b)=>String(a.nome||"").localeCompare(String(b.nome||""))).map(x=>`<option value="${x.id}"${x.id===mid?" selected":""}>${esc(x.nome)||"(sem nome)"}</option>`).join("");
     if(p.vazio){
       vozCard(`${diss}<div class="field"><label>Pasto para esvaziar</label><select id="vz_pasto"><option value="">— escolha —</option>${opt}</select></div>
@@ -3181,7 +3278,7 @@ function vozProcessar(txt){
       <div class="field"><label>Sexo dos animais</label><select id="vz_sexop">${optSexo(p.sexo||"")}</select></div>
       <div class="field"><label>Escore de pastagem (1 a 5)</label><select id="vz_escore">${optEscore(p.escore||"")}</select></div>
       <div class="field"><label>Produto / nutrição</label><select id="vz_prod">${optNutricaoSimples(p.nutri||"")}</select></div>
-      <div class="field"><label>Dono dos animais</label><select id="vz_pdono">${optDono(p.dono||"")}</select></div>
+      <div class="field"><label>Dono dos animais</label><select id="vz_pdono">${optDonoVoz(p.dono||"")}</select></div>
     </div>${p.cat?`<p class="muted">Categoria citada: <b>${esc(p.cat)}</b>.</p>`:""}${mid?"":`<p class="alerta-mini">Escolha o pasto na lista${p.pastoNum?` (não achei um pasto “${esc(p.pastoNum)}” cadastrado)`:""}.</p>`}`, "vozExecPasto");
   } else if(p.intent==="pesagem"){
     vozCard(`${diss}<div class="grid">
@@ -3204,6 +3301,12 @@ function vozProcessar(txt){
       <div class="field"><label>Resultado</label><select id="vz_res"><option value="prenhe"${p.prenhe?" selected":""}>Prenha</option><option value="vazia"${p.prenhe?"":" selected"}>Vazia</option></select></div>
       <div class="field"><label>Data</label><input id="vz_data" type="date" value="${hoje}"></div>
     </div>${p.animal?vozInfoAnimal(p.animal,"aguardando"):""}`, "vozExecDiag");
+  } else if(p.intent==="morte"){
+    vozCard(`${diss}<div class="grid">
+      <div class="field"><label>Animal nº</label><input id="vz_animal" type="number" inputmode="numeric" value="${p.animal||""}"></div>
+      <div class="field"><label>Data da morte</label><input id="vz_data" type="date" value="${hoje}"></div>
+      <div class="field"><label>Causa (opcional)</label><input id="vz_causa" placeholder="ex.: doença, predador, acidente"></div>
+    </div>${p.animal?vozInfoAnimal(p.animal,null):""}<p class="muted">O animal sai do rebanho ativo e o número fica livre.</p>`, "vozExecMorte");
   }
 }
 async function vozExecPasto(){
@@ -3277,6 +3380,17 @@ async function vozExecDiag(){
   const lr=(LOCAL.reproducao||[]).find(x=>x.id===rep.id); if(lr) Object.assign(lr,recU);
   toast(prenhe?`Prenhez confirmada na nº ${num}!`:`Nº ${num} registrada como vazia.`, prenhe?"ok":"");
   if(!prenhe) checarAlertaVazia(a.id);
+  fecharModal(); render();
+}
+async function vozExecMorte(){
+  const num=parseInt((document.getElementById("vz_animal")||{}).value); const a=achaAnimalNum(num);
+  if(!a) return toast(`Animal nº ${num||"?"} não encontrado.`,"err");
+  const data=(document.getElementById("vz_data")||{}).value||new Date().toISOString().slice(0,10);
+  const causa=((document.getElementById("vz_causa")||{}).value||"").trim();
+  const upd={ arquivado:true, status:"morto", data_morte:data, causa_morte:causa||null, numero_original:(a.numero_original??a.numero), codigo_arquivo:"M"+(a.numero??a.id), numero:null };
+  const { error } = await sb.from("animais").update(upd).eq("id",a.id);
+  if(error) return toast("Erro: "+msgErro(error),"err");
+  toast(`Morte registrada (nº ${num}). Número liberado.`,"ok");
   fecharModal(); render();
 }
 function vozTextoTotal(){ return ((vozCommitted+" "+vozCurrent).trim()).replace(/\s+/g," "); }
