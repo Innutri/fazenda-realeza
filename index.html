@@ -2496,8 +2496,7 @@ function textoRelatorioRebanho(){
   t+=`Machos: bezerros *${cat.bezerro}* · garrotes *${cat.garrote}* · bois *${cat.boi}*\n`;
   if(femeas.length && expostas){
     t+=`\n*🍼 REPRODUÇÃO*\n`;
-    t+=`• Prenhas: *${prenhas}*  ·  Vazias: *${vazias}*\n`;
-    t+=`• Taxa de prenhez: *${taxaPr}%*\n${barraTexto(taxaPr)}\n`;
+    t+=`• Prenhas: *${prenhas}*  ·  Vazias: *${vazias}*  ·  Taxa: *${taxaPr}%*\n`;
   }
   t+=`\n*👥 POR DONO*\n`;
   Object.keys(donos).sort().forEach(d=>{ const pct=total?Math.round(donos[d]/total*100):0; t+=`${d} — *${donos[d]}* (${pct}%)\n`; });
@@ -2521,48 +2520,35 @@ function textoRelatorioPastagem(){
   let tC=0,tUA=0,tAoc=0; ocupados.forEach(p=>{ const k=calcPastagem(p); tC+=k.cab; tUA+=k.ua; tAoc+=k.area; });
   const lotG=tAoc>0?tUA/tAoc:null;
 
-  let t=`🌱 *FAZENDA REALEZA — PASTAGEM*\n`;
-  t+=`📅 ${fmtDate(new Date().toISOString().slice(0,10))}\n`;
-  t+=`_1 U.A. = 450 kg de peso vivo_\n\n`;
+  let t=`🌱 *PASTAGEM · Fazenda Realeza*\n`;
+  t+=`${fmtDate(new Date().toISOString().slice(0,10))}\n\n`;
 
-  t+=`*📊 RESUMO*\n`;
-  t+=`• Pastos cadastrados: *${ps.length}*  ·  *${nf1(areaTotal)} ha*\n`;
-  t+=`• Pastos com animais: *${ocupados.length}*\n`;
-  t+=`• Total de animais: *${tC}* cab\n`;
-  t+=`• Área ocupada: *${nf1(tAoc)} ha*\n`;
-  t+=`• Lotação geral: *${lotG!=null?nf2(lotG):"—"}* U.A./ha\n`;
-
+  t+=`*Resumo*\n`;
+  t+=`🐄 ${tC} cab  ·  📐 ${nf1(tAoc)} ha ocupados\n`;
+  t+=`📊 Lotação geral: *${lotG!=null?nf2(lotG):"—"}* U.A./ha\n`;
   if(ocupados.length){
     const grupos={}; ocupados.forEach(p=>{ const d=p.dono||"Fazenda Realeza"; (grupos[d]||(grupos[d]=[])).push(p); });
-    t+=`\n*👥 POR DONO*\n`;
-    Object.keys(grupos).sort().forEach(d=>{
+    const donoTxt=Object.keys(grupos).sort().map(d=>{
       let sC=0; grupos[d].forEach(p=>sC+=parseInt(p.cabecas)||0);
       const pct=tC?Math.round(sC/tC*100):0;
-      t+=`${d} — *${sC}* cab (${pct}%)\n${barraTexto(pct)}\n`;
-    });
-    t+=`\n*🐂 PASTOS COM ANIMAIS*\n`;
-    t+=`_(cab · área · peso · U.A. · lotação · cab/ha)_\n\n`;
+      const nome=d.split(" ")[0];
+      return `${nome} ${sC} (${pct}%)`;
+    }).join("  ·  ");
+    t+=`👥 ${donoTxt}\n`;
+
+    t+=`\n*Pastos com animais*\n`;
     ocupados.slice().sort((a,b)=>(parseInt(b.cabecas)||0)-(parseInt(a.cabecas)||0)).forEach(p=>{
       const k=calcPastagem(p);
-      t+=`• *${p.nome||"—"}*${p.escore?`  ⭐${p.escore}`:""}\n`;
-      t+=`   *${k.cab}* cab`;
-      if(p.area_ha!=null&&p.area_ha!=="") t+=` · ${nf1(k.area)} ha`;
-      if(k.pm) t+=` · ${nf1(k.pm)} kg`;
-      if(k.pesoTotal) t+=` · ${nf1(k.ua)} U.A.`;
-      t+=`\n`;
-      let l2=[];
-      if(k.lotUA!=null&&k.pesoTotal) l2.push(`lot ${nf2(k.lotUA)} U.A./ha`);
-      if(k.cabHa!=null&&k.cab) l2.push(`${nf2(k.cabHa)} cab/ha`);
-      if(l2.length) t+=`   ${l2.join(" · ")}\n`;
-      let l3=[];
-      if(p.produto) l3.push(p.produto);
-      if(p.sexo) l3.push(p.sexo);
-      if(p.escore) l3.push(`escore ${p.escore}`);
-      l3.push(p.dono||"Fazenda Realeza");
-      t+=`   _${l3.join(" · ")}_\n`;
+      let campos=[`*${k.cab}* cab`];
+      if(k.pm) campos.push(`${nf1(k.pm)} kg`);
+      if(k.lotUA!=null&&k.pesoTotal) campos.push(`lot ${nf2(k.lotUA)}`);
+      if(p.escore) campos.push(`esc ${p.escore}`);
+      if(p.produto) campos.push(p.produto);
+      if(p.dono) campos.push(p.dono.split(" ")[0]);
+      t+=`• *${p.nome||"—"}*: ${campos.join(" · ")}\n`;
     });
   } else {
-    t+=`\n_Nenhum pasto com animais informados ainda. Atualize a ocupação (cabeças e dono) na aba 🌱 Pasto ou pelo microfone 🎤._\n`;
+    t+=`\n_Nenhum pasto com animais informados ainda. Atualize a ocupação na aba 🌱 Pasto ou pelo microfone 🎤._\n`;
   }
   t+=`\n— Fazenda Realeza 👑`;
   return t;
