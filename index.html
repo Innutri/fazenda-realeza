@@ -814,15 +814,20 @@ async function salvarLotacaoPasto(){
   const dono=((document.getElementById("pg_dono")||{}).value||"").trim();
   const sexo=((document.getElementById("pg_sexo")||{}).value||"").trim();
   const escoreV=((document.getElementById("pg_escore")||{}).value||"").trim();
-  // Só grava o campo que foi preenchido: campo vazio preserva o valor já salvo (não apaga outras células)
-  const upd={};
-  if(cabV!=="") upd.cabecas=parseInt(cabV);
-  if(pesoV!=="") upd.peso_medio=parseFloat(pesoV);
-  if(prod!=="") upd.produto=prod;
-  if(dono!=="") upd.dono=dono;
-  if(sexo!=="") upd.sexo=sexo;
-  if(escoreV!==""){ const pAtual=(LOCAL.pastos||[]).find(x=>x.id===id); upd.escore=parseInt(escoreV); upd.escore_hist=_pushEscoreHist(pAtual, escoreV); }
-  if(!Object.keys(upd).length) return toast("Nada para atualizar.","err");
+  const pAtual=(LOCAL.pastos||[]).find(x=>x.id===id);
+  // Cadastro do formulário SOBREPÕE: o que está na tela é exatamente o que fica salvo.
+  // (o formulário já vem preenchido com os dados atuais, então nada some sem intenção)
+  const upd={
+    cabecas: cabV!==""?parseInt(cabV):null,
+    peso_medio: pesoV!==""?parseFloat(pesoV):null,
+    produto: prod||null,
+    dono: dono||null,
+    sexo: sexo||null
+  };
+  if(escoreV!==""){ const novo=parseInt(escoreV); upd.escore=novo;
+    // só adiciona ao histórico quando o escore mudou (não duplica ao re-salvar igual)
+    if(!pAtual || String(pAtual.escore||"")!==String(novo)) upd.escore_hist=_pushEscoreHist(pAtual, escoreV);
+  } else { upd.escore=null; } // histórico é mantido mesmo zerando o escore atual
   const { error } = await sb.from("pastos").update(upd).eq("id",id);
   if(error) return toast("Erro: "+msgErro(error),"err");
   toast("Ocupação do pasto atualizada.","ok");
