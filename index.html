@@ -2606,6 +2606,10 @@ function renderRelatorioPastagem(){
   const lotG=tA>0?tUA/tA:null;
   body.innerHTML=`<div class="card">
     <div class="wizard-head no-print"><h3 style="border:none">🌱 Relatório de pastagem</h3></div>
+    ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <button class="btn" style="width:auto" onclick="compartilharPastagem()">📲 Compartilhar (WhatsApp)</button>
+      <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
+    </div>`:""}
     <div id="print-area">
       <h2 style="color:var(--verde);margin-bottom:2px">👑 Fazenda Realeza — Pastagem</h2>
       <p class="muted">${fmtDate(new Date().toISOString().slice(0,10))} · 1 U.A. = 450 kg de peso vivo</p>
@@ -2614,10 +2618,6 @@ function renderRelatorioPastagem(){
       <tfoot><tr style="font-weight:800;background:#f0f5f1"><td>TOTAL / MÉDIA</td><td>${f1(tA)}</td><td>${tC||"—"}</td><td>—</td><td>${f1(tUA)}</td><td>${(lotG!=null&&tUA)?f2(lotG):"—"}</td><td>${(tA>0&&tC)?f2(tC/tA):"—"}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tfoot>
       </table></div>`:`<div class="empty">Nenhum pasto cadastrado. Cadastre no app de gestão (Gerencial › Pastagem).</div>`}
     </div>
-    ${ps.length?`<div class="actions no-print" style="flex-wrap:wrap;gap:8px">
-      <button class="btn" style="width:auto" onclick="compartilharPastagem()">📲 Compartilhar (WhatsApp)</button>
-      <button class="btn sec" style="width:auto" onclick="window.print()">🖨️ Imprimir / PDF</button>
-    </div>`:""}
   </div>
   ${ps.length?`<div class="card" id="rel-pasto-dono"><h3>Ocupação por dono</h3><p class="muted">Separado por dono dos animais (José da Lamarta × Fazenda Realeza) e o geral com lotação.</p>${blocoPastoPorDono(ps)}</div>`:""}`;
 }
