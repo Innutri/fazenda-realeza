@@ -2675,7 +2675,7 @@ async function gerarRelatorio(){
   // Estatística reprodutiva sobre fêmeas aptas (12 meses ou mais)
   const femeasAtivas = LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea");
   const totalFemeasReb = femeasAtivas.length;
-  const statusReprodF = (f)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="parida") return "parida"; return "sem"; };
+  const statusReprodF = (f)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="parida") return "parida"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; return "sem"; };
   const temRepro=(fid)=>LOCAL.reproducao.some(r=>r.animal_id===fid);
   const f12 = femeasAtivas.filter(a=>{ const m=idadeMeses(a.data_nascimento); return (m!=null && m>=12) || temRepro(a.id); });
   const semData12 = femeasAtivas.filter(a=>idadeMeses(a.data_nascimento)==null && !temRepro(a.id)).length;
@@ -2693,7 +2693,7 @@ async function gerarRelatorio(){
   const taxaPrenhez=expostas?Math.round(rp.prenhes/expostas*100):0;
   // prenhas atuais (com o registro de prenhez)
   const prenhasRecs=[];
-  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && (u.fase==="prenhe"||u.resultado_prenhez===true)) prenhasRecs.push({f,r:u}); });
+  femeasAtivas.forEach(f=>{ const u=ultimoRepro(f.id); if(u && u.fase!=="parida" && (u.fase==="prenhe"||u.resultado_prenhez===true)) prenhasRecs.push({f,r:u}); });
   const totPrenhas=prenhasRecs.length;
   // 2) por método
   let mIatf=0,mTouro=0; prenhasRecs.forEach(x=>{ if(x.r.tipo==="iatf") mIatf++; else mTouro++; });
