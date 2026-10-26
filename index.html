@@ -328,8 +328,9 @@ function defaultsFor(t){
   return {};
 }
 function faixaDe(m){ if(m==null) return "sem_data"; if(m<=12) return "0-12"; if(m<=24) return "13-24"; return "25+"; }
-function femeaRepro(f){
-  const ciclos = LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>b.ciclo-a.ciclo);
+function femeaRepro(f, byAnimal){
+  const base = byAnimal ? (byAnimal.get(f.id)||[]) : LOCAL.reproducao.filter(r=>r.animal_id===f.id);
+  const ciclos = base.slice().sort((a,b)=>b.ciclo-a.ciclo);
   const ultimo = ciclos[0]||null;
   let situacao="sem_registro";
   if(ultimo){
@@ -351,8 +352,11 @@ function viewRows(name){
   const ativos = LOCAL.animais.filter(contaNoRebanho);
   if(name==="vw_contagem_tipo"){ const g={}; ativos.forEach(a=>g[a.tipo]=(g[a.tipo]||0)+1); return Object.keys(g).map(t=>({tipo:t,total:g[t]})); }
   if(name==="vw_faixa_etaria"){ const g={}; ativos.forEach(a=>{const k=a.tipo+"|"+faixaDe(idadeMeses(a.data_nascimento)); g[k]=(g[k]||0)+1;}); return Object.keys(g).map(k=>({tipo:k.split("|")[0],faixa:k.split("|")[1],total:g[k]})); }
-  if(name==="vw_femea_reproducao"){ return ativos.filter(a=>a.tipo==="femea").map(femeaRepro); }
-  if(name==="vw_resumo_reproducao"){ const fs=ativos.filter(a=>a.tipo==="femea").map(femeaRepro);
+  if(name==="vw_femea_reproducao"||name==="vw_resumo_reproducao"){
+    const byAnimal=new Map();
+    for(const r of (LOCAL.reproducao||[])){ let l=byAnimal.get(r.animal_id); if(!l){l=[];byAnimal.set(r.animal_id,l);} l.push(r); }
+    const fs=ativos.filter(a=>a.tipo==="femea").map(f=>femeaRepro(f,byAnimal));
+    if(name==="vw_femea_reproducao") return fs;
     return [{ total_femeas:fs.length,
       prenhes:fs.filter(f=>f.situacao==="prenhe").length,
       vazias:fs.filter(f=>f.situacao==="vazia").length,
@@ -1315,27 +1319,13 @@ async function salvarMacho(){
   toast("Macho cadastrado!","ok"); renderCadastro();
 }
 
-function filtrarAnimais(term){
-  term=(term||"").trim().toLowerCase();
-  const rows=document.querySelectorAll("#cad-list table.rt tbody tr");
-  let vis=0;
-  rows.forEach(tr=>{
-    const t=(tr.getAttribute("data-busca")||"").toLowerCase();
-    const show=!term || t.indexOf(term)>=0;
-    tr.style.display=show?"":"none";
-    if(show) vis++;
-  });
-  const c=document.getElementById("busca-count"); if(c) c.textContent=term?(vis+" encontrado(s)"):"";
-}
-async function listaAnimais(tipo){
-  const el=$("#cad-list");
-  el.innerHTML=`<div class="card"><div class="empty">Carregando…</div></div>`;
-  const { data, error } = await sb.from("animais").select("*").eq("tipo",tipo).eq("arquivado",false).order("numero",{ascending:true,nullsFirst:false});
-  if(error){ el.innerHTML=`<div class="card"><div class="empty">Erro: ${esc(error.message)}</div></div>`; return; }
-  const rotulo={touro:"Touros",femea:"Fêmeas",macho:"Machos"}[tipo];
-  if(!data.length){ el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados</h3><div class="empty">Nenhum ${tipo} cadastrado ainda.</div></div>`; return; }
-  let rows = data.map(a=>`
-    <tr data-busca="${esc([a.numero,a.nome,a.raca,a.registro,a.classificacao_genetica].filter(x=>x!=null&&x!=="").join(" "))}">
+// ---- Lista de animais paginada (renderiza em blocos p/ não travar no celular) ----
+let _lista = { tipo:null, all:[], rotulo:"", limit:60, term:"" };
+const _LISTA_PASSO = 60;
+function _buscaStr(a){ return [a.numero,a.nome,a.raca,a.registro,a.classificacao_genetica].filter(x=>x!=null&&x!=="").join(" ").toLowerCase(); }
+function _linhaAnimal(a, tipo){
+  return `
+    <tr>
       <td data-label="Nº"><a class="lnk" onclick="abrirFicha('${a.id}')">${a.numero??"—"}</a></td>
       ${tipo==="touro"?`<td data-label="Nome"><b>${esc(a.nome)||"—"}</b></td>`:""}
       <td data-label="Raça">${esc(a.raca)||"—"}</td>
@@ -1349,14 +1339,43 @@ async function listaAnimais(tipo){
         <button class="btn danger sm" onclick="arquivar('${a.id}',${a.numero})">Vender</button>
         <button class="btn danger sm" style="background:#7a2b2b" onclick="registrarMorte('${a.id}',${a.numero})">Morte</button>
       </div></td>
-    </tr>`).join("");
+    </tr>`;
+}
+function _renderLinhasLista(){
+  const tb=document.getElementById("lista-tbody"); if(!tb) return;
+  const term=(_lista.term||"").trim().toLowerCase();
+  const filtradas = term ? _lista.all.filter(x=>x.b.indexOf(term)>=0) : _lista.all;
+  const vis = filtradas.slice(0, _lista.limit);
+  tb.innerHTML = vis.map(x=>_linhaAnimal(x.a,_lista.tipo)).join("");
+  const c=document.getElementById("busca-count");
+  if(c) c.textContent = term ? (filtradas.length+" encontrado(s)") : (_lista.all.length+" no total");
+  const mais=document.getElementById("lista-mais");
+  if(mais){
+    const restam=filtradas.length-vis.length;
+    if(restam>0){
+      mais.innerHTML=`<button class="btn ghost" onclick="_mostrarMaisLista()">Mostrar mais ${Math.min(_LISTA_PASSO,restam)} (exibindo ${vis.length} de ${filtradas.length})</button>`;
+    } else { mais.innerHTML = vis.length>_LISTA_PASSO?`<span class="muted">Exibindo todos os ${vis.length}.</span>`:""; }
+  }
+}
+function _mostrarMaisLista(){ _lista.limit += _LISTA_PASSO; _renderLinhasLista(); }
+function filtrarAnimais(term){ _lista.term=term||""; _lista.limit=_LISTA_PASSO; _renderLinhasLista(); }
+async function listaAnimais(tipo){
+  const el=$("#cad-list");
+  el.innerHTML=`<div class="card"><div class="empty">Carregando…</div></div>`;
+  const { data, error } = await sb.from("animais").select("*").eq("tipo",tipo).eq("arquivado",false).order("numero",{ascending:true,nullsFirst:false});
+  if(error){ el.innerHTML=`<div class="card"><div class="empty">Erro: ${esc(error.message)}</div></div>`; return; }
+  const rotulo={touro:"Touros",femea:"Fêmeas",macho:"Machos"}[tipo];
+  if(!data.length){ el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados</h3><div class="empty">Nenhum ${tipo} cadastrado ainda.</div></div>`; return; }
+  _lista={ tipo, all:data.map(a=>({a, b:_buscaStr(a)})), rotulo, limit:_LISTA_PASSO, term:"" };
   el.innerHTML=`<div class="card"><h3>${rotulo} cadastrados (${data.length})</h3>
-    <div class="actions" style="margin-bottom:8px"><div class="field" style="max-width:340px;flex:1"><input id="busca-animal" oninput="filtrarAnimais(this.value)" placeholder="🔍 Buscar por nº, nome ou raça…"></div><span id="busca-count" class="muted" style="align-self:center"></span></div>
+    <div class="actions" style="margin-bottom:8px"><div class="field" style="max-width:340px;flex:1"><input id="busca-animal" oninput="filtrarAnimais(this.value)" placeholder="🔍 Buscar por nº, nome ou raça…" inputmode="search"></div><span id="busca-count" class="muted" style="align-self:center"></span></div>
     <div style="overflow-x:auto"><table class="rt"><thead><tr>
       <th>Nº</th>${tipo==="touro"?"<th>Nome</th>":""}<th>Raça</th><th>Nascimento</th><th>Idade</th>
       ${tipo==="touro"?"<th>Procedência</th>":"<th>Categoria</th>"}
       <th>Class. genética</th><th></th>
-    </tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    </tr></thead><tbody id="lista-tbody"></tbody></table></div>
+    <div id="lista-mais" style="margin-top:10px;text-align:center"></div></div>`;
+  _renderLinhasLista();
 }
 
 async function arquivar(id,numero){
@@ -1395,9 +1414,11 @@ async function confirmarMorte(id){
 // --------- REGISTROS ---------
 function gmdRebanhoStats(){
   const ativos=(LOCAL.animais||[]).filter(contaNoRebanho);
+  const opsPorAnimal=new Map();
+  for(const o of (LOCAL.operacoes_rebanho||[])){ let l=opsPorAnimal.get(o.animal_id); if(!l){l=[];opsPorAnimal.set(o.animal_id,l);} l.push(o); }
   const totais=[];
   for(const a of ativos){
-    const ops=(LOCAL.operacoes_rebanho||[]).filter(o=>o.animal_id===a.id);
+    const ops=opsPorAnimal.get(a.id)||[];
     const g=calcGMD(ops);
     if(g.n>=2 && g.total!=null) totais.push(g.total);
   }
@@ -2476,7 +2497,9 @@ function textoRelatorioRebanho(){
   const cat={bezerra:0,novilha:0,vaca:0,bezerro:0,garrote:0,boi:0};
   ativos.forEach(a=>{ const c=categoriaAnimal(a); if(cat[c]!=null) cat[c]++; });
   const femeas=ativos.filter(a=>a.tipo==="femea");
-  const ultimoRepro=(fid)=>{ const cs=(LOCAL.reproducao||[]).filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+  const _rpa=new Map();
+  for(const r of (LOCAL.reproducao||[])){ let l=_rpa.get(r.animal_id); if(!l){l=[];_rpa.set(r.animal_id,l);} l.push(r); }
+  const ultimoRepro=(fid)=>{ const l=_rpa.get(fid); if(!l) return null; return l.slice().sort((a,b)=>(b.ciclo||0)-(a.ciclo||0))[0]||null; };
   let prenhas=0,vazias=0,expostas=0;
   femeas.forEach(f=>{ const u=ultimoRepro(f.id); if(!u) return;
     const pr=(u.fase==="prenhe"||u.resultado_prenhez===true), vz=(u.fase==="vazia"||u.resultado_prenhez===false);
@@ -2675,8 +2698,12 @@ async function gerarRelatorio(){
   // Estatística reprodutiva sobre fêmeas aptas (12 meses ou mais)
   const femeasAtivas = LOCAL.animais.filter(a=>!a.arquivado && a.tipo==="femea");
   const totalFemeasReb = femeasAtivas.length;
-  const statusReprodF = (f)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===f.id).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="parida") return "parida"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; return "sem"; };
-  const temRepro=(fid)=>LOCAL.reproducao.some(r=>r.animal_id===fid);
+  // índice de reprodução por animal (evita varrer a tabela inteira por fêmea — O(n) em vez de O(n²))
+  const _reproPorAnimal=new Map();
+  for(const r of (LOCAL.reproducao||[])){ let l=_reproPorAnimal.get(r.animal_id); if(!l){l=[];_reproPorAnimal.set(r.animal_id,l);} l.push(r); }
+  const _ciclosOrd=(fid)=>{ const l=_reproPorAnimal.get(fid); return l? l.slice().sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)) : []; };
+  const statusReprodF = (f)=>{ const cs=_ciclosOrd(f.id); if(!cs.length) return "sem"; const u=cs[0]; if(u.fase==="parida") return "parida"; if(u.fase==="vazia"||u.resultado_prenhez===false) return "vazia"; if(u.fase==="aguardando") return "aguardando"; if(u.fase==="prenhe"||u.resultado_prenhez===true) return "prenhe"; return "sem"; };
+  const temRepro=(fid)=>_reproPorAnimal.has(fid);
   const f12 = femeasAtivas.filter(a=>{ const m=idadeMeses(a.data_nascimento); return (m!=null && m>=12) || temRepro(a.id); });
   const semData12 = femeasAtivas.filter(a=>idadeMeses(a.data_nascimento)==null && !temRepro(a.id)).length;
   const n12=f12.length;
@@ -2687,7 +2714,7 @@ async function gerarRelatorio(){
   const pctPren12 = p12(s12.prenhe);
 
   // ---- Etapa 1: índices reprodutivos práticos ----
-  const ultimoRepro=(fid)=>{ const cs=LOCAL.reproducao.filter(r=>r.animal_id===fid).sort((a,b)=>(b.ciclo||0)-(a.ciclo||0)); return cs[0]||null; };
+  const ultimoRepro=(fid)=>{ const cs=_ciclosOrd(fid); return cs[0]||null; };
   // 1) Taxa de prenhez sobre expostas
   const expostas=(rp.prenhes||0)+(rp.vazias||0)+(rp.em_processo||0);
   const taxaPrenhez=expostas?Math.round(rp.prenhes/expostas*100):0;
